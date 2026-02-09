@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import Layout from './components/Layout';
 import Dashboard from './components/Dashboard';
 import SRList from './components/SRList';
-import WhatsAppSimulator from './components/WhatsAppSimulator';
+import TwilioLive from './components/TwilioLive';
 import { Site, Asset, ServiceRequest, SRStatus, Status, SRSource } from './types';
 import { supabase, checkConnection } from './lib/supabase';
 import { X, MapPin, Package, CheckCircle, Trash2, Edit3, Archive, AlertTriangle, Plus, Search, Loader2, Github, ExternalLink, ShieldCheck } from 'lucide-react';
@@ -37,10 +37,7 @@ const App: React.FC = () => {
     
     if (status.needsSetup) {
       setDbStatus('needs_setup');
-      setDbErrorMessage("Database connected, but tables are missing. Please run the SQL setup script.");
-      setSites(JSON.parse(localStorage.getItem('mainti_sites') || '[]'));
-      setAssets(JSON.parse(localStorage.getItem('mainti_assets') || '[]'));
-      setSrs(JSON.parse(localStorage.getItem('mainti_srs') || '[]'));
+      setDbErrorMessage("Database connected, but tables are missing.");
       setIsLoading(false);
       return;
     }
@@ -48,9 +45,6 @@ const App: React.FC = () => {
     if (!status.connected) {
       setDbStatus('error');
       setDbErrorMessage(status.error || "Failed to connect to Supabase.");
-      setSites(JSON.parse(localStorage.getItem('mainti_sites') || '[]'));
-      setAssets(JSON.parse(localStorage.getItem('mainti_assets') || '[]'));
-      setSrs(JSON.parse(localStorage.getItem('mainti_srs') || '[]'));
       setIsLoading(false);
       return;
     }
@@ -71,7 +65,6 @@ const App: React.FC = () => {
       if (assetsRes.data) setAssets(assetsRes.data);
       if (srsRes.data) setSrs(srsRes.data);
     } catch (err: any) {
-      console.error("Fetch error:", err);
       setDbStatus('error');
       setDbErrorMessage(err.message);
     } finally {
@@ -81,6 +74,37 @@ const App: React.FC = () => {
 
   useEffect(() => {
     fetchData();
+
+    // Setup Realtime Subscription
+    const channel = supabase
+      .channel('schema-db-changes')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'service_requests' },
+        (payload) => {
+          setSrs(current => [payload.new as ServiceRequest, ...current]);
+          // Optional: Show a notification or play a sound
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'service_requests' },
+        (payload) => {
+          setSrs(current => current.map(sr => sr.id === payload.new.id ? payload.new as ServiceRequest : sr));
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'service_requests' },
+        (payload) => {
+          setSrs(current => current.filter(sr => sr.id !== payload.old.id));
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const handleCreateSite = async (e: React.FormEvent) => {
@@ -94,21 +118,12 @@ const App: React.FC = () => {
       status: Status.ACTIVE
     };
 
-    if (dbStatus === 'connected') {
-      const { error } = await supabase.from('sites').insert([site]);
-      if (error) {
-        console.error("Create Site Error:", error.message);
-        alert(`Failed to save to Cloud: ${error.message}`);
-      } else {
-        setSites(prev => [...prev, site]);
-        setShowAddSite(false);
-      }
-    } else {
+    const { error } = await supabase.from('sites').insert([site]);
+    if (!error) {
       setSites(prev => [...prev, site]);
-      localStorage.setItem('mainti_sites', JSON.stringify([...sites, site]));
       setShowAddSite(false);
+      setNewSite({ name: '', location: '' });
     }
-    setNewSite({ name: '', location: '' });
     setIsSaving(false);
   };
 
@@ -124,21 +139,12 @@ const App: React.FC = () => {
       status: Status.ACTIVE
     };
 
-    if (dbStatus === 'connected') {
-      const { error } = await supabase.from('assets').insert([asset]);
-      if (error) {
-        console.error("Create Asset Error:", error.message);
-        alert(`Failed to save to Cloud: ${error.message}`);
-      } else {
-        setAssets(prev => [...prev, asset]);
-        setShowAddAsset(false);
-      }
-    } else {
+    const { error } = await supabase.from('assets').insert([asset]);
+    if (!error) {
       setAssets(prev => [...prev, asset]);
-      localStorage.setItem('mainti_assets', JSON.stringify([...assets, asset]));
       setShowAddAsset(false);
+      setNewAsset({ name: '', type: 'General', site_id: '' });
     }
-    setNewAsset({ name: '', type: 'General', site_id: '' });
     setIsSaving(false);
   };
 
@@ -156,44 +162,22 @@ const App: React.FC = () => {
       created_at: new Date().toISOString()
     };
 
-    if (dbStatus === 'connected') {
-      const { error } = await supabase.from('service_requests').insert([sr]);
-      if (error) {
-        console.error("Create SR Error:", error.message);
-        alert(`Failed to save to Cloud: ${error.message}`);
-      } else {
-        setSrs(prev => [sr, ...prev]);
-        setShowAddSR(false);
-      }
-    } else {
-      setSrs(prev => [sr, ...prev]);
-      localStorage.setItem('mainti_srs', JSON.stringify([sr, ...srs]));
+    const { error } = await supabase.from('service_requests').insert([sr]);
+    if (!error) {
+      // srs is updated via realtime
       setShowAddSR(false);
+      setNewSR({ title: '', description: '', site_id: '', asset_id: '' });
     }
-    setNewSR({ title: '', description: '', site_id: '', asset_id: '' });
     setIsSaving(false);
   };
 
-  const handleWhatsAppSR = async (sr: ServiceRequest) => {
-    if (dbStatus === 'connected') {
-      await supabase.from('service_requests').insert([sr]);
-    }
-    setSrs(prev => [sr, ...prev]);
-  };
-
   const updateSRStatus = async (id: string, status: SRStatus) => {
-    if (dbStatus === 'connected') {
-      await supabase.from('service_requests').update({ status }).eq('id', id);
-    }
-    setSrs(prev => prev.map(sr => sr.id === id ? { ...sr, status } : sr));
+    await supabase.from('service_requests').update({ status }).eq('id', id);
     if (selectedSR?.id === id) setSelectedSR(prev => prev ? { ...prev, status } : null);
   };
 
   const deleteSR = async (id: string) => {
-    if (dbStatus === 'connected') {
-      await supabase.from('service_requests').delete().eq('id', id);
-    }
-    setSrs(prev => prev.filter(sr => sr.id !== id));
+    await supabase.from('service_requests').delete().eq('id', id);
     setSelectedSR(null);
   };
 
@@ -309,13 +293,12 @@ const App: React.FC = () => {
           </div>
         );
       case 'whatsapp':
-        return <WhatsAppSimulator onNewSR={handleWhatsAppSR} sites={sites} assets={assets} />;
+        return <TwilioLive />;
       case 'settings':
         return (
           <div className="max-w-2xl mx-auto space-y-8 animate-in fade-in duration-500 pb-12">
              <h2 className="text-3xl font-bold text-slate-800">Settings</h2>
              
-             {/* Connection Card */}
              <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm space-y-6">
                 <div>
                    <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
@@ -323,21 +306,17 @@ const App: React.FC = () => {
                      Database Connection
                    </h3>
                    <div className={`p-4 rounded-2xl border flex flex-col gap-4 ${
-                     dbStatus === 'connected' ? 'bg-emerald-50 border-emerald-100' : 
-                     dbStatus === 'needs_setup' ? 'bg-amber-50 border-amber-100' : 'bg-red-50 border-red-100'
+                     dbStatus === 'connected' ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100'
                    }`}>
                       <div className="flex items-center justify-between w-full">
                         <div className="flex items-center gap-3">
                           <div className={`w-3 h-3 rounded-full ${
-                            dbStatus === 'connected' ? 'bg-emerald-500' : 
-                            dbStatus === 'needs_setup' ? 'bg-amber-500' : 'bg-red-500'
+                            dbStatus === 'connected' ? 'bg-emerald-500' : 'bg-red-500'
                           }`} />
                           <span className={`font-bold text-sm ${
-                            dbStatus === 'connected' ? 'text-emerald-700' : 
-                            dbStatus === 'needs_setup' ? 'text-amber-700' : 'text-red-700'
+                            dbStatus === 'connected' ? 'text-emerald-700' : 'text-red-700'
                           }`}>
-                            {dbStatus === 'connected' ? 'Supabase Online' : 
-                             dbStatus === 'needs_setup' ? 'Schema Missing' : 'Supabase Offline'}
+                            {dbStatus === 'connected' ? 'Supabase Online' : 'Supabase Offline'}
                           </span>
                         </div>
                         <button onClick={fetchData} className="text-xs font-bold text-blue-600 uppercase hover:underline">Refresh</button>
@@ -347,57 +326,28 @@ const App: React.FC = () => {
                           {dbErrorMessage}
                         </p>
                       )}
-                      {dbStatus === 'needs_setup' && (
-                        <div className="bg-amber-100/50 p-3 rounded-xl border border-amber-200">
-                          <div className="flex items-start gap-2">
-                            <AlertTriangle size={16} className="text-amber-600 mt-0.5" />
-                            <p className="text-[11px] text-amber-800 leading-normal">
-                              <strong>Action Required:</strong> The database is reachable but tables don't exist. Please run the SQL migration script in your Supabase SQL Editor.
-                            </p>
-                          </div>
-                        </div>
-                      )}
                    </div>
                 </div>
              </div>
 
-             {/* Deployment Card */}
              <div className="bg-slate-900 p-8 rounded-3xl shadow-xl space-y-6 text-white overflow-hidden relative">
                 <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 blur-3xl rounded-full -mr-10 -mt-10"></div>
-                
                 <div className="flex items-start justify-between">
                   <div>
                     <h3 className="text-xl font-bold mb-1 flex items-center gap-2">
-                      <Github size={22} /> Connect to GitHub
+                      <Github size={22} /> Deployment Status
                     </h3>
                     <p className="text-slate-400 text-sm">Sync your project for safe production hosting.</p>
                   </div>
                 </div>
-
-                <div className="grid gap-4 mt-6">
-                  <div className="bg-white/5 border border-white/10 p-4 rounded-2xl">
-                    <h4 className="text-xs font-bold text-blue-400 uppercase tracking-widest mb-2">Step 1: Push Code</h4>
-                    <p className="text-sm text-slate-300">Click the <strong>"Connect to GitHub"</strong> button in your editor to create a new repository.</p>
-                  </div>
-                  
-                  <div className="bg-white/5 border border-white/10 p-4 rounded-2xl">
-                    <h4 className="text-xs font-bold text-blue-400 uppercase tracking-widest mb-2">Step 2: Deploy to Vercel</h4>
-                    <p className="text-sm text-slate-300">Link your GitHub repo to Vercel and add your environment variables (`API_KEY`, `SUPABASE_URL`, etc.).</p>
-                  </div>
-                </div>
-
                 <div className="pt-4 flex gap-4">
                   <a href="https://github.com" target="_blank" className="flex-1 bg-white text-slate-900 py-3 rounded-xl text-center text-sm font-bold flex items-center justify-center gap-2 hover:bg-slate-100 transition-colors">
-                    Go to GitHub <ExternalLink size={14} />
+                    GitHub Repository <ExternalLink size={14} />
                   </a>
                   <a href="https://vercel.com" target="_blank" className="flex-1 bg-blue-600 text-white py-3 rounded-xl text-center text-sm font-bold flex items-center justify-center gap-2 hover:bg-blue-700 transition-colors">
-                    Deploy on Vercel <ExternalLink size={14} />
+                    Vercel Dashboard <ExternalLink size={14} />
                   </a>
                 </div>
-             </div>
-
-             <div className="text-center">
-                <p className="text-xs text-slate-400 font-medium italic">Project ID: oygdrtvzoabboxycfdil • Version 1.0.0-MVP</p>
              </div>
           </div>
         )
@@ -410,12 +360,10 @@ const App: React.FC = () => {
     <Layout activeTab={activeTab} onTabChange={setActiveTab} dbStatus={dbStatus === 'connected' ? 'connected' : (dbStatus === 'connecting' ? 'connecting' : 'error')}>
       {renderContent()}
 
-      {/* Modal Backdrop Helper */}
       {(showAddSite || showAddAsset || showAddSR) && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[60] animate-in fade-in duration-200" onClick={() => { setShowAddSite(false); setShowAddAsset(false); setShowAddSR(false); }} />
       )}
 
-      {/* Add Site Modal */}
       {showAddSite && (
         <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-white rounded-3xl shadow-2xl z-[70] p-8 animate-in zoom-in-95 duration-200">
           <h3 className="text-xl font-bold text-slate-800 mb-6">Add New Site</h3>
@@ -438,7 +386,6 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Add Asset Modal */}
       {showAddAsset && (
         <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-white rounded-3xl shadow-2xl z-[70] p-8 animate-in zoom-in-95 duration-200">
           <h3 className="text-xl font-bold text-slate-800 mb-6">Add New Asset</h3>
@@ -474,7 +421,6 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Manual SR Form Modal */}
       {showAddSR && (
         <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-lg bg-white rounded-3xl shadow-2xl z-[70] p-8 animate-in zoom-in-95 duration-200">
           <h3 className="text-xl font-bold text-slate-800 mb-6">Create Service Request</h3>
@@ -513,7 +459,6 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* SR Detail Modal */}
       {selectedSR && (
         <div className="fixed inset-0 z-[100] flex items-end md:items-center justify-center p-0 md:p-6 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
           <div className="bg-white w-full max-w-lg md:rounded-3xl shadow-2xl flex flex-col max-h-[95vh] animate-in slide-in-from-bottom-10 duration-500 overflow-hidden">
