@@ -5,28 +5,29 @@ import {
   Wrench, 
   MapPin, 
   Package, 
-  MessageSquare,
   Settings,
-  Circle,
   Wifi,
   WifiOff
 } from 'lucide-react';
+import { TabConfig } from '../types';
 
 interface LayoutProps {
   children: React.ReactNode;
   activeTab: string;
   onTabChange: (tab: string) => void;
   dbStatus: 'connecting' | 'connected' | 'error';
+  tabConfigs: TabConfig[];
 }
 
-const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange, dbStatus }) => {
-  const tabs = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'srs', label: 'Service Requests', icon: Wrench },
-    { id: 'sites', label: 'Sites', icon: MapPin },
-    { id: 'assets', label: 'Assets', icon: Package },
-    { id: 'whatsapp', label: 'WhatsApp Intake', icon: MessageSquare },
-  ];
+const iconMap = {
+  LayoutDashboard,
+  Wrench,
+  MapPin,
+  Package
+};
+
+const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange, dbStatus, tabConfigs }) => {
+  const visibleTabs = tabConfigs.filter(t => t.isVisible);
 
   return (
     <div className="flex flex-col min-h-screen bg-[#F8FAFC] text-slate-900 md:flex-row">
@@ -47,15 +48,15 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange, dbSta
               dbStatus === 'connected' ? 'text-emerald-600' : 
               dbStatus === 'error' ? 'text-red-600' : 'text-amber-600'
             }`}>
-              {dbStatus === 'connected' ? 'Connected to DB' : 
-               dbStatus === 'error' ? 'Connection Error' : 'Connecting...'}
+              {dbStatus === 'connected' ? 'Connected' : 
+               dbStatus === 'error' ? 'Error' : 'Connecting...'}
             </span>
           </div>
         </div>
         
         <nav className="flex-1 px-4 space-y-1 mt-4">
-          {tabs.map((tab) => {
-            const Icon = tab.icon;
+          {visibleTabs.map((tab) => {
+            const Icon = iconMap[tab.iconName];
             const isActive = activeTab === tab.id;
             return (
               <button
@@ -99,9 +100,6 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange, dbSta
              <div className={`p-1.5 rounded-full ${dbStatus === 'connected' ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
                 {dbStatus === 'connected' ? <Wifi size={16} /> : <WifiOff size={16} />}
              </div>
-             <button onClick={() => onTabChange('whatsapp')} className="p-2 bg-emerald-500 text-white rounded-full shadow-lg">
-                <MessageSquare size={18} />
-             </button>
           </div>
         </header>
 
@@ -111,8 +109,8 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange, dbSta
       </div>
 
       <nav className="md:hidden fixed bottom-0 inset-x-0 bg-white border-t border-slate-200 flex justify-around p-2 pb-safe z-40">
-        {tabs.slice(0, 4).map((tab) => {
-          const Icon = tab.icon;
+        {visibleTabs.map((tab) => {
+          const Icon = iconMap[tab.iconName];
           const isActive = activeTab === tab.id;
           return (
             <button
@@ -127,6 +125,15 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange, dbSta
             </button>
           );
         })}
+        <button
+          onClick={() => onTabChange('settings')}
+          className={`flex flex-col items-center gap-1 p-2 transition-all flex-1 ${
+            activeTab === 'settings' ? 'text-blue-600' : 'text-slate-400'
+          }`}
+        >
+          <Settings size={20} />
+          <span className="text-[10px] font-semibold uppercase tracking-wider">Settings</span>
+        </button>
       </nav>
     </div>
   );

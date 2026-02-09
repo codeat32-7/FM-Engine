@@ -50,3 +50,10 @@ export interface ExtractedSR {
   siteNameHint: string;
   assetNameHint: string;
 }
+
+export interface TabConfig {
+  id: string;
+  label: string;
+  iconName: 'LayoutDashboard' | 'Wrench' | 'MapPin' | 'Package';
+  isVisible: boolean;
+}

@@ -3,10 +3,27 @@ import React, { useState, useEffect } from 'react';
 import Layout from './components/Layout';
 import Dashboard from './components/Dashboard';
 import SRList from './components/SRList';
-import TwilioLive from './components/TwilioLive';
-import { Site, Asset, ServiceRequest, SRStatus, Status, SRSource } from './types';
+import { Site, Asset, ServiceRequest, SRStatus, Status, SRSource, TabConfig } from './types';
 import { supabase, checkConnection } from './lib/supabase';
-import { X, MapPin, Package, CheckCircle, Trash2, Edit3, Archive, AlertTriangle, Plus, Search, Loader2, Github, ExternalLink, ShieldCheck } from 'lucide-react';
+import { 
+  X, MapPin, Package, CheckCircle, Trash2, Edit3, 
+  Archive, AlertTriangle, Plus, Search, Loader2, 
+  Github, ExternalLink, ShieldCheck, ArrowUp, ArrowDown, Eye, EyeOff, GripVertical, Wrench, LayoutDashboard 
+} from 'lucide-react';
+
+const DEFAULT_TABS: TabConfig[] = [
+  { id: 'dashboard', label: 'Dashboard', iconName: 'LayoutDashboard', isVisible: true },
+  { id: 'srs', label: 'Service Requests', iconName: 'Wrench', isVisible: true },
+  { id: 'sites', label: 'Sites', iconName: 'MapPin', isVisible: true },
+  { id: 'assets', label: 'Assets', iconName: 'Package', isVisible: true },
+];
+
+const iconMap = {
+  LayoutDashboard,
+  Wrench,
+  MapPin,
+  Package
+};
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -19,6 +36,12 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   
+  // Customization state
+  const [tabConfigs, setTabConfigs] = useState<TabConfig[]>(() => {
+    const saved = localStorage.getItem('mainti_tab_config');
+    return saved ? JSON.parse(saved) : DEFAULT_TABS;
+  });
+
   // Modals state
   const [showAddSite, setShowAddSite] = useState(false);
   const [showAddAsset, setShowAddAsset] = useState(false);
@@ -28,6 +51,10 @@ const App: React.FC = () => {
   const [newSite, setNewSite] = useState({ name: '', location: '' });
   const [newAsset, setNewAsset] = useState({ name: '', type: 'General', site_id: '' });
   const [newSR, setNewSR] = useState({ title: '', description: '', site_id: '', asset_id: '' });
+
+  useEffect(() => {
+    localStorage.setItem('mainti_tab_config', JSON.stringify(tabConfigs));
+  }, [tabConfigs]);
 
   const fetchData = async () => {
     setIsLoading(true);
@@ -75,7 +102,6 @@ const App: React.FC = () => {
   useEffect(() => {
     fetchData();
 
-    // Setup Realtime Subscription
     const channel = supabase
       .channel('schema-db-changes')
       .on(
@@ -83,7 +109,6 @@ const App: React.FC = () => {
         { event: 'INSERT', schema: 'public', table: 'service_requests' },
         (payload) => {
           setSrs(current => [payload.new as ServiceRequest, ...current]);
-          // Optional: Show a notification or play a sound
         }
       )
       .on(
@@ -106,6 +131,23 @@ const App: React.FC = () => {
       supabase.removeChannel(channel);
     };
   }, []);
+
+  const moveTab = (index: number, direction: 'up' | 'down') => {
+    const newTabs = [...tabConfigs];
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= newTabs.length) return;
+    
+    const temp = newTabs[index];
+    newTabs[index] = newTabs[targetIndex];
+    newTabs[targetIndex] = temp;
+    setTabConfigs(newTabs);
+  };
+
+  const toggleTabVisibility = (id: string) => {
+    setTabConfigs(current => current.map(t => 
+      t.id === id ? { ...t, isVisible: !t.isVisible } : t
+    ));
+  };
 
   const handleCreateSite = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -164,7 +206,6 @@ const App: React.FC = () => {
 
     const { error } = await supabase.from('service_requests').insert([sr]);
     if (!error) {
-      // srs is updated via realtime
       setShowAddSR(false);
       setNewSR({ title: '', description: '', site_id: '', asset_id: '' });
     }
@@ -226,7 +267,7 @@ const App: React.FC = () => {
               ))}
               {sites.length === 0 && (
                 <div className="col-span-full py-20 text-center bg-white rounded-2xl border border-dashed border-slate-200">
-                  <p className="text-slate-400">No sites found. Add your first site to begin.</p>
+                  <p className="text-slate-400">No sites found.</p>
                 </div>
               )}
             </div>
@@ -238,18 +279,17 @@ const App: React.FC = () => {
              <div className="flex justify-between items-end">
               <div>
                 <h2 className="text-3xl font-bold text-slate-800 mb-1">Assets</h2>
-                <p className="text-slate-500 text-sm">Equipment and inventory items</p>
+                <p className="text-slate-500 text-sm">Equipment items</p>
               </div>
               <button onClick={() => setShowAddAsset(true)} className="bg-slate-900 text-white px-5 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 shadow-md hover:bg-slate-800 transition-all active:scale-95">
                 <Plus size={18} /> Add Asset
               </button>
             </div>
-            
             <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden overflow-x-auto">
               <table className="w-full text-left min-w-[600px]">
                 <thead className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-50">
                   <tr>
-                    <th className="px-6 py-4">Asset Details</th>
+                    <th className="px-6 py-4">Asset</th>
                     <th className="px-6 py-4">Site</th>
                     <th className="px-6 py-4">Type</th>
                     <th className="px-6 py-4">Status</th>
@@ -265,40 +305,77 @@ const App: React.FC = () => {
                           </div>
                           <div>
                             <p className="text-sm font-bold text-slate-800">{asset.name}</p>
-                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{asset.code}</p>
+                            <p className="text-[10px] text-slate-400 font-bold tracking-widest uppercase">{asset.code}</p>
                           </div>
                         </div>
                       </td>
                       <td className="px-6 py-4 text-sm font-medium text-slate-600">
-                        {sites.find(s => s.id === asset.site_id)?.name || 'Unknown Site'}
+                        {sites.find(s => s.id === asset.site_id)?.name || 'Unknown'}
                       </td>
-                      <td className="px-6 py-4">
-                        <span className="px-2 py-1 bg-slate-100 text-slate-600 text-[10px] font-bold uppercase rounded">
-                          {asset.type}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-xs font-bold text-emerald-600 uppercase">
-                        {asset.status}
-                      </td>
+                      <td className="px-6 py-4"><span className="px-2 py-1 bg-slate-100 text-slate-600 text-[10px] font-bold uppercase rounded">{asset.type}</span></td>
+                      <td className="px-6 py-4 text-xs font-bold text-emerald-600 uppercase">{asset.status}</td>
                     </tr>
                   ))}
-                  {assets.length === 0 && (
-                    <tr>
-                      <td colSpan={4} className="py-20 text-center text-slate-400">No assets found.</td>
-                    </tr>
-                  )}
                 </tbody>
               </table>
             </div>
           </div>
         );
-      case 'whatsapp':
-        return <TwilioLive />;
       case 'settings':
         return (
           <div className="max-w-2xl mx-auto space-y-8 animate-in fade-in duration-500 pb-12">
              <h2 className="text-3xl font-bold text-slate-800">Settings</h2>
              
+             {/* Navigation Customization Card */}
+             <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm space-y-6">
+                <div>
+                   <h3 className="text-lg font-bold text-slate-800 mb-1 flex items-center gap-2">
+                     Navigation Sidebar
+                   </h3>
+                   <p className="text-sm text-slate-500 mb-6">Reorder or hide tabs in your sidebar.</p>
+                   
+                   <div className="space-y-3">
+                     {tabConfigs.map((tab, index) => {
+                       const Icon = iconMap[tab.iconName];
+                       return (
+                         <div key={tab.id} className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100 transition-all hover:border-blue-200 group">
+                            <GripVertical size={16} className="text-slate-300 group-hover:text-slate-400" />
+                            <div className="p-2 bg-white rounded-xl text-slate-600 shadow-sm">
+                               <Icon size={18} />
+                            </div>
+                            <div className="flex-1">
+                               <p className="text-sm font-bold text-slate-800">{tab.label}</p>
+                               <p className="text-[10px] text-slate-400 font-medium uppercase tracking-tight">Tab ID: {tab.id}</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                               <button 
+                                 onClick={() => moveTab(index, 'up')}
+                                 disabled={index === 0}
+                                 className="p-2 text-slate-400 hover:text-blue-600 disabled:opacity-30 disabled:hover:text-slate-400 transition-colors"
+                               >
+                                 <ArrowUp size={18} />
+                               </button>
+                               <button 
+                                 onClick={() => moveTab(index, 'down')}
+                                 disabled={index === tabConfigs.length - 1}
+                                 className="p-2 text-slate-400 hover:text-blue-600 disabled:opacity-30 disabled:hover:text-slate-400 transition-colors"
+                               >
+                                 <ArrowDown size={18} />
+                               </button>
+                               <button 
+                                 onClick={() => toggleTabVisibility(tab.id)}
+                                 className={`p-2 transition-colors ${tab.isVisible ? 'text-blue-500 hover:text-blue-700' : 'text-slate-300 hover:text-slate-400'}`}
+                               >
+                                 {tab.isVisible ? <Eye size={18} /> : <EyeOff size={18} />}
+                               </button>
+                            </div>
+                         </div>
+                       );
+                     })}
+                   </div>
+                </div>
+             </div>
+
              <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm space-y-6">
                 <div>
                    <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
@@ -321,32 +398,7 @@ const App: React.FC = () => {
                         </div>
                         <button onClick={fetchData} className="text-xs font-bold text-blue-600 uppercase hover:underline">Refresh</button>
                       </div>
-                      {dbErrorMessage && (
-                        <p className="text-xs font-medium text-slate-600 italic bg-white/50 p-2 rounded-lg">
-                          {dbErrorMessage}
-                        </p>
-                      )}
                    </div>
-                </div>
-             </div>
-
-             <div className="bg-slate-900 p-8 rounded-3xl shadow-xl space-y-6 text-white overflow-hidden relative">
-                <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 blur-3xl rounded-full -mr-10 -mt-10"></div>
-                <div className="flex items-start justify-between">
-                  <div>
-                    <h3 className="text-xl font-bold mb-1 flex items-center gap-2">
-                      <Github size={22} /> Deployment Status
-                    </h3>
-                    <p className="text-slate-400 text-sm">Sync your project for safe production hosting.</p>
-                  </div>
-                </div>
-                <div className="pt-4 flex gap-4">
-                  <a href="https://github.com" target="_blank" className="flex-1 bg-white text-slate-900 py-3 rounded-xl text-center text-sm font-bold flex items-center justify-center gap-2 hover:bg-slate-100 transition-colors">
-                    GitHub Repository <ExternalLink size={14} />
-                  </a>
-                  <a href="https://vercel.com" target="_blank" className="flex-1 bg-blue-600 text-white py-3 rounded-xl text-center text-sm font-bold flex items-center justify-center gap-2 hover:bg-blue-700 transition-colors">
-                    Vercel Dashboard <ExternalLink size={14} />
-                  </a>
                 </div>
              </div>
           </div>
@@ -357,7 +409,12 @@ const App: React.FC = () => {
   };
 
   return (
-    <Layout activeTab={activeTab} onTabChange={setActiveTab} dbStatus={dbStatus === 'connected' ? 'connected' : (dbStatus === 'connecting' ? 'connecting' : 'error')}>
+    <Layout 
+      activeTab={activeTab} 
+      onTabChange={setActiveTab} 
+      dbStatus={dbStatus === 'connected' ? 'connected' : (dbStatus === 'connecting' ? 'connecting' : 'error')}
+      tabConfigs={tabConfigs}
+    >
       {renderContent()}
 
       {(showAddSite || showAddAsset || showAddSR) && (
@@ -373,7 +430,7 @@ const App: React.FC = () => {
               <input required type="text" placeholder="e.g. North Wing" className="w-full bg-slate-50 border-none rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" value={newSite.name} onChange={e => setNewSite({...newSite, name: e.target.value})} />
             </div>
             <div>
-              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Location / City</label>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Location</label>
               <input required type="text" placeholder="e.g. New York" className="w-full bg-slate-50 border-none rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" value={newSite.location} onChange={e => setNewSite({...newSite, location: e.target.value})} />
             </div>
             <div className="flex gap-3 pt-4">
@@ -392,7 +449,7 @@ const App: React.FC = () => {
           <form onSubmit={handleCreateAsset} className="space-y-4">
             <div>
               <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Asset Name</label>
-              <input required type="text" placeholder="e.g. AC Unit #04" className="w-full bg-slate-50 border-none rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" value={newAsset.name} onChange={e => setNewAsset({...newAsset, name: e.target.value})} />
+              <input required type="text" placeholder="e.g. AC Unit" className="w-full bg-slate-50 border-none rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" value={newAsset.name} onChange={e => setNewAsset({...newAsset, name: e.target.value})} />
             </div>
             <div>
               <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Type</label>
@@ -400,12 +457,10 @@ const App: React.FC = () => {
                 <option>General</option>
                 <option>Electrical</option>
                 <option>Mechanical</option>
-                <option>Plumbing</option>
-                <option>HVAC</option>
               </select>
             </div>
             <div>
-              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Site Mapping</label>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Site</label>
               <select required className="w-full bg-slate-50 border-none rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" value={newAsset.site_id} onChange={e => setNewAsset({...newAsset, site_id: e.target.value})}>
                 <option value="">Select a Site...</option>
                 {sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -427,11 +482,11 @@ const App: React.FC = () => {
           <form onSubmit={handleCreateSR} className="space-y-4">
             <div>
               <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Short Title</label>
-              <input required type="text" placeholder="e.g. Water leak in bathroom" className="w-full bg-slate-50 border-none rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" value={newSR.title} onChange={e => setNewSR({...newSR, title: e.target.value})} />
+              <input required type="text" className="w-full bg-slate-50 border-none rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" value={newSR.title} onChange={e => setNewSR({...newSR, title: e.target.value})} />
             </div>
             <div>
-              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Full Description</label>
-              <textarea rows={3} placeholder="Provide details about the issue..." className="w-full bg-slate-50 border-none rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 resize-none" value={newSR.description} onChange={e => setNewSR({...newSR, description: e.target.value})} />
+              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Description</label>
+              <textarea rows={3} className="w-full bg-slate-50 border-none rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 resize-none" value={newSR.description} onChange={e => setNewSR({...newSR, description: e.target.value})} />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -442,10 +497,10 @@ const App: React.FC = () => {
                 </select>
               </div>
               <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Asset (Optional)</label>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Asset</label>
                 <select className="w-full bg-slate-50 border-none rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" value={newSR.asset_id} onChange={e => setNewSR({...newSR, asset_id: e.target.value})}>
                   <option value="">Unknown</option>
-                  {assets.filter(a => !newSR.site_id || a.site_id === newSR.site_id).map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  {assets.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
                 </select>
               </div>
             </div>
@@ -487,18 +542,8 @@ const App: React.FC = () => {
                     <span className="flex items-center gap-1 uppercase tracking-wider">Source: {selectedSR.source}</span>
                   </div>
                </div>
-               <div className="grid grid-cols-2 gap-4">
-                  <div className="p-4 bg-slate-50 rounded-2xl">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Site</p>
-                    <p className="text-sm font-bold text-slate-800">{sites.find(s => s.id === selectedSR.site_id)?.name || 'Unknown'}</p>
-                  </div>
-                  <div className="p-4 bg-slate-50 rounded-2xl">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Asset</p>
-                    <p className="text-sm font-bold text-slate-800">{assets.find(a => a.id === selectedSR.asset_id)?.name || 'Unknown'}</p>
-                  </div>
-               </div>
                <div>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase mb-2">Issue Description</p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase mb-2">Description</p>
                   <div className="p-5 bg-slate-50 border border-slate-100 rounded-2xl text-sm leading-relaxed text-slate-700 whitespace-pre-line">
                     {selectedSR.description}
                   </div>
@@ -511,7 +556,7 @@ const App: React.FC = () => {
                         key={s} 
                         onClick={() => updateSRStatus(selectedSR.id, s)}
                         className={`p-3 rounded-xl text-xs font-bold transition-all border ${
-                          selectedSR.status === s ? 'bg-blue-600 border-blue-600 text-white shadow-lg' : 'bg-white border-slate-200 text-slate-600 hover:border-blue-200'
+                          selectedSR.status === s ? 'bg-blue-600 border-blue-600 text-white shadow-lg' : 'bg-white border-slate-200 text-slate-600'
                         }`}
                       >
                         {s}
@@ -521,8 +566,8 @@ const App: React.FC = () => {
                </div>
             </div>
             <div className="p-6 bg-slate-50 border-t border-slate-100 flex gap-4">
-               <button onClick={() => setSelectedSR(null)} className="flex-1 bg-white border border-slate-200 py-3 rounded-xl font-bold text-sm hover:bg-slate-50 transition-colors">Close View</button>
-               <button onClick={() => deleteSR(selectedSR.id)} className="w-14 h-14 bg-red-50 text-red-500 rounded-xl flex items-center justify-center hover:bg-red-100 transition-colors transition-all active:scale-90"><Trash2 size={22} /></button>
+               <button onClick={() => setSelectedSR(null)} className="flex-1 bg-white border border-slate-200 py-3 rounded-xl font-bold text-sm hover:bg-slate-50 transition-colors">Close</button>
+               <button onClick={() => deleteSR(selectedSR.id)} className="w-14 h-14 bg-red-50 text-red-500 rounded-xl flex items-center justify-center hover:bg-red-100 transition-all active:scale-90"><Trash2 size={22} /></button>
             </div>
           </div>
         </div>
