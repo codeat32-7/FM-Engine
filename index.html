@@ -15,6 +15,16 @@
             -webkit-tap-highlight-color: transparent;
         }
     </style>
+    <!-- Shim for process.env to prevent crashes in browser -->
+    <script>
+      window.process = {
+        env: {
+          API_KEY: '',
+          SUPABASE_URL: 'https://oygdrtvzoabboxycfdil.supabase.co',
+          SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im95Z2RydHZ6b2FiYm94eWNmZGlsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA2NjI0MjEsImV4cCI6MjA4NjIzODQyMX0.KGEDbWnaSC7H4_9WtaA78B4YNwT3GqI9Cab9gU_HqZ8'
+        }
+      };
+    </script>
 <script type="importmap">
 {
   "imports": {
@@ -32,5 +42,7 @@
 </head>
 <body class="bg-slate-50 text-slate-900">
     <div id="root"></div>
+    <!-- Load the main entry point -->
+    <script type="module" src="index.tsx"></script>
 </body>
 </html>

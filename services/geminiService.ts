@@ -2,10 +2,20 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { ExtractedSR } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
 export const extractSRInfo = async (message: string): Promise<ExtractedSR> => {
   try {
+    // Initialize inside the function to ensure process.env exists
+    const apiKey = process.env.API_KEY;
+    if (!apiKey) {
+      console.warn("Gemini API Key is missing. Check your Vercel Environment Variables.");
+      return {
+        title: message.slice(0, 30),
+        siteNameHint: "Unknown",
+        assetNameHint: "Unknown"
+      };
+    }
+
+    const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: `Extract maintenance information from the following message: "${message}"`,
@@ -24,7 +34,8 @@ export const extractSRInfo = async (message: string): Promise<ExtractedSR> => {
       }
     });
 
-    return JSON.parse(response.text.trim()) as ExtractedSR;
+    const text = response.text || "";
+    return JSON.parse(text.trim()) as ExtractedSR;
   } catch (error) {
     console.error("Gemini Extraction Error:", error);
     return {
