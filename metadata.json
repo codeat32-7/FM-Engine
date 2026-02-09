@@ -1,5 +1,5 @@
 {
-  "name": "Mainti - WhatsApp-First CMMS",
+  "name": "FM Engine - WhatsApp-First CMMS",
   "description": "A lightweight, mobile-first maintenance management system designed for zero-training onboarding and automatic WhatsApp request intake.",
   "requestFramePermissions": [
     "geolocation"

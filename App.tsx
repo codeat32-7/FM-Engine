@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import Layout from './components/Layout';
 import Dashboard from './components/Dashboard';
@@ -38,7 +37,7 @@ const App: React.FC = () => {
   
   // Customization state
   const [tabConfigs, setTabConfigs] = useState<TabConfig[]>(() => {
-    const saved = localStorage.getItem('mainti_tab_config');
+    const saved = localStorage.getItem('fm_engine_tab_config');
     return saved ? JSON.parse(saved) : DEFAULT_TABS;
   });
 
@@ -53,7 +52,7 @@ const App: React.FC = () => {
   const [newSR, setNewSR] = useState({ title: '', description: '', site_id: '', asset_id: '' });
 
   useEffect(() => {
-    localStorage.setItem('mainti_tab_config', JSON.stringify(tabConfigs));
+    localStorage.setItem('fm_engine_tab_config', JSON.stringify(tabConfigs));
   }, [tabConfigs]);
 
   const fetchData = async () => {

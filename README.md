@@ -1,4 +1,4 @@
-# Mainti - Real-Time CMMS
+# FM Engine - Real-Time CMMS
 
 ## 🚀 Correct Setup Path
 
