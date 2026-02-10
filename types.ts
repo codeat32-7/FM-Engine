@@ -14,34 +14,79 @@ export enum SRStatus {
 
 export enum SRSource {
   WHATSAPP = 'WhatsApp',
-  WEB = 'Web'
+  WEB = 'Web',
+  VOICE = 'Voice'
+}
+
+export enum BlockType {
+  BUILDING = 'Building',
+  FLOOR = 'Floor',
+  APARTMENT = 'Apartment',
+  SPACE = 'Space'
+}
+
+export interface Organization {
+  id: string;
+  name: string;
+}
+
+export interface UserProfile {
+  id: string;
+  org_id: string | null;
+  phone: string;
+  full_name: string;
+  onboarded: boolean;
 }
 
 export interface Site {
   id: string;
+  org_id: string;
   name: string;
   code: string;
   location: string;
   status: Status;
 }
 
+export interface Block {
+  id: string;
+  site_id: string;
+  parent_block_id?: string;
+  name: string;
+  type: BlockType;
+}
+
+export interface Tenant {
+  id: string;
+  org_id: string;
+  site_id: string;
+  block_id?: string;
+  name: string;
+  phone: string;
+  status: Status;
+}
+
 export interface Asset {
   id: string;
+  org_id: string;
+  site_id: string;
+  block_id?: string;
   name: string;
   type: string;
-  site_id: string;
   code: string;
   status: Status;
 }
 
 export interface ServiceRequest {
   id: string;
+  org_id: string;
   title: string;
   description: string;
   site_id: string | null;
+  block_id: string | null;
   asset_id: string | null;
   status: SRStatus;
   source: SRSource;
+  resolution_notes?: string;
   created_at: string;
 }
 
@@ -54,6 +99,6 @@ export interface ExtractedSR {
 export interface TabConfig {
   id: string;
   label: string;
-  iconName: 'LayoutDashboard' | 'Wrench' | 'MapPin' | 'Package';
+  iconName: 'LayoutDashboard' | 'Wrench' | 'MapPin' | 'Package' | 'Users';
   isVisible: boolean;
 }

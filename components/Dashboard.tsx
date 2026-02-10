@@ -2,119 +2,127 @@
 import React from 'react';
 import { ServiceRequest, SRStatus, SRSource } from '../types';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, CartesianGrid } from 'recharts';
-import { CheckCircle, Activity, Clock, MessageSquare, Monitor } from 'lucide-react';
+import { CheckCircle, Activity, Clock, MessageSquare, Monitor, Plus, Mic, ArrowRight } from 'lucide-react';
 
 interface DashboardProps {
   srs: ServiceRequest[];
+  onNewRequest: () => void;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ srs }) => {
+const Dashboard: React.FC<DashboardProps> = ({ srs, onNewRequest }) => {
   const resolvedCount = srs.filter(sr => sr.status === SRStatus.RESOLVED || sr.status === SRStatus.CLOSED).length;
-  const completionRate = srs.length > 0 ? Math.round((resolvedCount / srs.length) * 100) : 0;
-
-  const chartData = [
-    { name: 'New', count: srs.filter(sr => sr.status === SRStatus.NEW).length, color: '#60A5FA' },
-    { name: 'In Progress', count: srs.filter(sr => sr.status === SRStatus.IN_PROGRESS).length, color: '#3B82F6' },
-    { name: 'Resolved', count: srs.filter(sr => sr.status === SRStatus.RESOLVED).length, color: '#2563EB' },
-    { name: 'Closed', count: srs.filter(sr => sr.status === SRStatus.CLOSED).length, color: '#1E40AF' },
-  ];
+  const activeCount = srs.filter(sr => sr.status === SRStatus.NEW || sr.status === SRStatus.IN_PROGRESS).length;
 
   const recentActivity = srs.slice(0, 5).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex flex-col justify-between h-40">
-          <div className="flex justify-between items-start">
-            <div>
-              <p className="text-sm font-medium text-slate-500 mb-1">Resolved</p>
-              <p className="text-4xl font-bold text-slate-800">{resolvedCount}</p>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div>
+          <h2 className="text-3xl font-black text-slate-900 tracking-tight">Overview</h2>
+          <p className="text-slate-500 font-medium">Welcome back to your dashboard.</p>
+        </div>
+        <button 
+          onClick={onNewRequest}
+          className="bg-blue-600 text-white px-8 py-4 rounded-2xl font-bold flex items-center justify-center gap-3 hover:bg-blue-700 transition-all shadow-xl shadow-blue-100 active:scale-95 text-lg"
+        >
+          <Plus size={24} strokeWidth={3} /> Log Service Request
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="bg-white p-6 rounded-[24px] border border-slate-100 shadow-sm flex flex-col justify-between h-36">
+           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Active Tickets</p>
+           <p className="text-4xl font-black text-slate-900">{activeCount}</p>
+        </div>
+        <div className="bg-white p-6 rounded-[24px] border border-slate-100 shadow-sm flex flex-col justify-between h-36">
+           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Resolved Tickets</p>
+           <p className="text-4xl font-black text-emerald-600">{resolvedCount}</p>
+        </div>
+        <div className="bg-white p-6 rounded-[24px] border border-slate-100 shadow-sm flex flex-col justify-between h-36">
+           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Avg Completion</p>
+           <p className="text-4xl font-black text-blue-600">8.2<span className="text-sm font-bold text-slate-400 ml-1">hrs</span></p>
+        </div>
+      </div>
+
+      {/* WhatsApp Guide Board */}
+      <div className="bg-slate-900 rounded-[32px] p-8 text-white relative overflow-hidden shadow-2xl">
+        <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 blur-[80px] rounded-full -mr-20 -mt-20"></div>
+        <div className="relative z-10 flex flex-col md:flex-row gap-8 items-center">
+          <div className="flex-1">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2.5 bg-emerald-500 rounded-xl">
+                <MessageSquare size={24} className="text-white" />
+              </div>
+              <h3 className="text-2xl font-black">WhatsApp Intake Enabled</h3>
             </div>
-            <div className="p-3 bg-slate-50 rounded-xl">
-              <CheckCircle className="text-slate-400 w-6 h-6" />
+            <p className="text-slate-400 font-medium mb-6 leading-relaxed">
+              Anyone can create a request by sending a message or a <span className="text-emerald-400 font-bold">voice note</span>. Our AI instantly converts them into structured tickets.
+            </p>
+            <div className="flex flex-wrap gap-4">
+               <div className="flex items-center gap-3 bg-white/5 border border-white/10 px-5 py-3 rounded-2xl">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase">Sandbox Number</span>
+                  <span className="font-mono text-emerald-400 font-bold">+1 415 523 8886</span>
+               </div>
+               <div className="flex items-center gap-3 bg-white/5 border border-white/10 px-5 py-3 rounded-2xl">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase">Code</span>
+                  <span className="font-mono text-white font-bold">join [your-sandbox-name]</span>
+               </div>
             </div>
           </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex flex-col justify-between h-40">
-          <div className="flex justify-between items-start">
-            <div>
-              <p className="text-sm font-medium text-slate-500 mb-1">Completion Rate</p>
-              <p className="text-4xl font-bold text-slate-800">{completionRate}%</p>
-              <p className="text-xs text-emerald-600 font-medium mt-1">All time</p>
-            </div>
-            <div className="p-3 bg-slate-50 rounded-xl">
-              <Activity className="text-slate-400 w-6 h-6" />
-            </div>
+          <div className="hidden md:flex flex-col gap-3">
+             <div className="p-4 bg-white/5 border border-white/10 rounded-2xl flex items-center gap-4 w-64">
+                <div className="p-2 bg-emerald-500/20 rounded-lg"><Mic size={18} className="text-emerald-500" /></div>
+                <span className="text-sm font-medium">Try voice notes</span>
+             </div>
+             <div className="p-4 bg-white/5 border border-white/10 rounded-2xl flex items-center gap-4 w-64">
+                <div className="p-2 bg-blue-500/20 rounded-lg"><Monitor size={18} className="text-blue-500" /></div>
+                <span className="text-sm font-medium">Automatic Site Mapping</span>
+             </div>
           </div>
         </div>
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 bg-white p-8 rounded-2xl border border-slate-100 shadow-sm">
-          <h3 className="text-lg font-bold text-slate-800 mb-8">Request Status Distribution</h3>
-          <div className="h-[300px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData} margin={{ top: 0, right: 0, left: -30, bottom: 0 }}>
-                <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="#f1f5f9" />
-                <XAxis 
-                  dataKey="name" 
-                  fontSize={12} 
-                  axisLine={false} 
-                  tickLine={false} 
-                  tick={{ fill: '#64748b', fontWeight: 500 }}
-                  dy={10}
-                />
-                <YAxis 
-                  fontSize={12} 
-                  axisLine={false} 
-                  tickLine={false} 
-                  tick={{ fill: '#64748b' }}
-                />
-                <Tooltip 
-                  cursor={{ fill: '#f8fafc' }}
-                  contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-                />
-                <Bar dataKey="count" radius={[6, 6, 0, 0]} barSize={45}>
-                  {chartData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+      <div className="grid lg:grid-cols-3 gap-8 pb-10">
+        <div className="lg:col-span-2 bg-white p-8 rounded-[32px] border border-slate-100 shadow-sm">
+          <h3 className="text-xl font-black text-slate-900 mb-8">Recent Tickets</h3>
+          <div className="space-y-4">
+            {recentActivity.map((activity, idx) => (
+              <div key={idx} className="flex items-center gap-5 p-5 bg-slate-50 rounded-2xl hover:bg-white hover:shadow-md hover:border-blue-100 border border-transparent transition-all group">
+                <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${
+                  activity.status === SRStatus.NEW ? 'bg-blue-100 text-blue-600' : 'bg-emerald-100 text-emerald-600'
+                }`}>
+                   {activity.source === SRSource.WHATSAPP ? <MessageSquare size={20} /> : <Monitor size={20} />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold text-slate-900 truncate">{activity.title}</p>
+                  <p className="text-xs font-medium text-slate-400 uppercase tracking-tight">{new Date(activity.created_at).toDateString()}</p>
+                </div>
+                <div className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest ${
+                  activity.status === SRStatus.NEW ? 'bg-blue-50 text-blue-700' : 'bg-emerald-50 text-emerald-700'
+                }`}>
+                   {activity.status}
+                </div>
+                <ArrowRight size={18} className="text-slate-300 group-hover:text-blue-500 group-hover:translate-x-1 transition-all" />
+              </div>
+            ))}
           </div>
         </div>
-
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm flex flex-col overflow-hidden">
-          <div className="p-6 border-b border-slate-50">
-            <h3 className="text-lg font-bold text-slate-800">Recent Activity</h3>
-          </div>
-          <div className="flex-1 overflow-y-auto">
-            {recentActivity.length > 0 ? (
-              recentActivity.map((activity, idx) => (
-                <div key={idx} className="p-6 flex gap-4 hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-0">
-                  <div className="mt-1">
-                    <div className="w-2.5 h-2.5 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]"></div>
-                  </div>
-                  <div>
-                    <p className="text-sm font-bold text-slate-800 leading-tight mb-0.5">{activity.title}</p>
-                    <p className="text-xs text-slate-500 mb-1">{activity.description.slice(0, 40)}...</p>
-                    <div className="flex items-center gap-2 text-[10px] text-slate-400 font-medium uppercase tracking-wider">
-                      <span>{new Date(activity.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                      <span>via</span>
-                      <span className="flex items-center gap-1">
-                        {activity.source === SRSource.WHATSAPP ? <MessageSquare size={10} /> : <Monitor size={10} />}
-                        {activity.source}
-                      </span>
-                    </div>
-                  </div>
+        
+        <div className="bg-white p-8 rounded-[32px] border border-slate-100 shadow-sm flex flex-col">
+          <h3 className="text-xl font-black text-slate-900 mb-6">Asset Health</h3>
+          <div className="flex-1 flex flex-col items-center justify-center text-center space-y-4">
+             <div className="relative w-32 h-32 flex items-center justify-center">
+                <svg className="w-full h-full" viewBox="0 0 36 36">
+                  <path className="text-slate-100" strokeWidth="3" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                  <path className="text-emerald-500" strokeDasharray="85, 100" strokeWidth="3" strokeLinecap="round" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                </svg>
+                <div className="absolute flex flex-col items-center">
+                   <span className="text-2xl font-black">85%</span>
+                   <span className="text-[8px] font-bold text-slate-400 uppercase">Uptime</span>
                 </div>
-              ))
-            ) : (
-              <div className="p-10 text-center">
-                <p className="text-slate-400 text-sm">No recent activity</p>
-              </div>
-            )}
+             </div>
+             <p className="text-sm font-medium text-slate-500 leading-relaxed px-4">All mechanical systems are performing within expected limits.</p>
           </div>
         </div>
       </div>

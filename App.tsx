@@ -1,574 +1,415 @@
+
 import React, { useState, useEffect } from 'react';
 import Layout from './components/Layout';
 import Dashboard from './components/Dashboard';
 import SRList from './components/SRList';
-import { Site, Asset, ServiceRequest, SRStatus, Status, SRSource, TabConfig } from './types';
-import { supabase, checkConnection } from './lib/supabase';
+import TenantList from './components/TenantList';
+import AssetList from './components/AssetList';
+import Auth from './components/Auth';
+import { Site, Asset, ServiceRequest, SRStatus, Status, SRSource, TabConfig, UserProfile, Tenant, BlockType, Block, Organization } from './types';
+import { supabase, checkSchemaReady } from './lib/supabase';
 import { 
-  X, MapPin, Package, CheckCircle, Trash2, Edit3, 
-  Archive, AlertTriangle, Plus, Search, Loader2, 
-  Github, ExternalLink, ShieldCheck, ArrowUp, ArrowDown, Eye, EyeOff, GripVertical, Wrench, LayoutDashboard 
+  X, MapPin, Plus, Loader2, Wrench, ArrowRight, Layers, CheckCircle, Building, Database, AlertCircle, Terminal
 } from 'lucide-react';
 
 const DEFAULT_TABS: TabConfig[] = [
   { id: 'dashboard', label: 'Dashboard', iconName: 'LayoutDashboard', isVisible: true },
   { id: 'srs', label: 'Service Requests', iconName: 'Wrench', isVisible: true },
   { id: 'sites', label: 'Sites', iconName: 'MapPin', isVisible: true },
+  { id: 'tenants', label: 'Tenants', iconName: 'Users', isVisible: true },
   { id: 'assets', label: 'Assets', iconName: 'Package', isVisible: true },
 ];
 
-const iconMap = {
-  LayoutDashboard,
-  Wrench,
-  MapPin,
-  Package
-};
-
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
+    const saved = localStorage.getItem('fm_engine_user');
+    return saved ? JSON.parse(saved) : null;
+  });
+  
+  const [organization, setOrganization] = useState<Organization | null>(null);
   const [sites, setSites] = useState<Site[]>([]);
+  const [blocks, setBlocks] = useState<Block[]>([]);
   const [assets, setAssets] = useState<Asset[]>([]);
+  const [tenants, setTenants] = useState<Tenant[]>([]);
   const [srs, setSrs] = useState<ServiceRequest[]>([]);
   const [selectedSR, setSelectedSR] = useState<ServiceRequest | null>(null);
-  const [dbStatus, setDbStatus] = useState<'connecting' | 'connected' | 'error' | 'needs_setup'>('connecting');
-  const [dbErrorMessage, setDbErrorMessage] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
   
-  // Customization state
-  const [tabConfigs, setTabConfigs] = useState<TabConfig[]>(() => {
-    const saved = localStorage.getItem('fm_engine_tab_config');
-    return saved ? JSON.parse(saved) : DEFAULT_TABS;
+  const [isLoading, setIsLoading] = useState(false);
+  const [dbStatus, setDbStatus] = useState<'connecting' | 'connected' | 'error' | 'needs_setup'>('connecting');
+  const [tabConfigs] = useState<TabConfig[]>(() => DEFAULT_TABS);
+
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [onboardingStep, setOnboardingStep] = useState(1);
+  const [onboardingData, setOnboardingData] = useState({ 
+    userName: '', 
+    orgName: '', 
+    siteName: '' 
   });
-
-  // Modals state
+  
   const [showAddSite, setShowAddSite] = useState(false);
+  const [showAddBlock, setShowAddBlock] = useState(false);
   const [showAddAsset, setShowAddAsset] = useState(false);
+  const [showAddTenant, setShowAddTenant] = useState(false);
   const [showAddSR, setShowAddSR] = useState(false);
+  
+  const [activeSiteForBlock, setActiveSiteForBlock] = useState<string | null>(null);
+  const [resolutionNote, setResolutionNote] = useState('');
+  const [isClosing, setIsClosing] = useState(false);
 
-  // Form State
-  const [newSite, setNewSite] = useState({ name: '', location: '' });
-  const [newAsset, setNewAsset] = useState({ name: '', type: 'General', site_id: '' });
-  const [newSR, setNewSR] = useState({ title: '', description: '', site_id: '', asset_id: '' });
+  // Form States
+  const [newAsset, setNewAsset] = useState({ name: '', type: 'General', site_id: '', block_id: '' });
+  const [newBlock, setNewBlock] = useState({ name: '', type: BlockType.BUILDING });
+  const [newTenant, setNewTenant] = useState({ name: '', phone: '', site_id: '', block_id: '' });
+  const [newSR, setNewSR] = useState({ title: '', description: '', site_id: '', block_id: '', asset_id: '' });
 
   useEffect(() => {
-    localStorage.setItem('fm_engine_tab_config', JSON.stringify(tabConfigs));
-  }, [tabConfigs]);
+    const init = async () => {
+      const status = await checkSchemaReady();
+      if (status.needsSetup) {
+        setDbStatus('needs_setup');
+        return;
+      }
+      
+      if (currentUser) {
+        if (!currentUser.onboarded) setShowOnboarding(true);
+        fetchOrgData();
+      } else {
+        setDbStatus('connected');
+      }
+    };
+    init();
+  }, [currentUser]);
 
-  const fetchData = async () => {
+  const fetchOrgData = async () => {
+    if (!currentUser?.org_id) return;
     setIsLoading(true);
-    setDbErrorMessage(null);
-    
-    const status = await checkConnection();
-    
-    if (status.needsSetup) {
-      setDbStatus('needs_setup');
-      setDbErrorMessage("Database connected, but tables are missing.");
-      setIsLoading(false);
-      return;
-    }
-
-    if (!status.connected) {
-      setDbStatus('error');
-      setDbErrorMessage(status.error || "Failed to connect to Supabase.");
-      setIsLoading(false);
-      return;
-    }
-
-    setDbStatus('connected');
     try {
-      const [sitesRes, assetsRes, srsRes] = await Promise.all([
-        supabase.from('sites').select('*').order('name'),
-        supabase.from('assets').select('*').order('name'),
-        supabase.from('service_requests').select('*').order('created_at', { ascending: false })
+      const { data: orgData, error: orgError } = await supabase.from('organizations').select('*').eq('id', currentUser.org_id).single();
+      
+      if (orgError) {
+        if (orgError.code === 'PGRST205') {
+          setDbStatus('needs_setup');
+          return;
+        }
+        throw orgError;
+      }
+
+      if (orgData) setOrganization(orgData);
+
+      const [siteData, assetData, tenantData, srData] = await Promise.all([
+        supabase.from('sites').select('*').eq('org_id', currentUser.org_id),
+        supabase.from('assets').select('*').eq('org_id', currentUser.org_id),
+        supabase.from('tenants').select('*').eq('org_id', currentUser.org_id),
+        supabase.from('service_requests').select('*').eq('org_id', currentUser.org_id)
       ]);
+      
+      const fetchedSites = siteData.data || [];
+      setSites(fetchedSites);
+      setAssets(assetData.data || []);
+      setTenants(tenantData.data || []);
+      setSrs(srData.data || []);
 
-      if (sitesRes.error) throw sitesRes.error;
-      if (assetsRes.error) throw assetsRes.error;
-      if (srsRes.error) throw srsRes.error;
+      if (fetchedSites.length > 0) {
+        const siteIds = fetchedSites.map(s => s.id);
+        const { data: blockData } = await supabase.from('blocks').select('*').in('site_id', siteIds);
+        setBlocks(blockData || []);
+      }
 
-      if (sitesRes.data) setSites(sitesRes.data);
-      if (assetsRes.data) setAssets(assetsRes.data);
-      if (srsRes.data) setSrs(srsRes.data);
-    } catch (err: any) {
+      setDbStatus('connected');
+    } catch (err) {
+      console.error(err);
       setDbStatus('error');
-      setDbErrorMessage(err.message);
     } finally {
       setIsLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchData();
-
-    const channel = supabase
-      .channel('schema-db-changes')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'service_requests' },
-        (payload) => {
-          setSrs(current => [payload.new as ServiceRequest, ...current]);
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'service_requests' },
-        (payload) => {
-          setSrs(current => current.map(sr => sr.id === payload.new.id ? payload.new as ServiceRequest : sr));
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: 'DELETE', schema: 'public', table: 'service_requests' },
-        (payload) => {
-          setSrs(current => current.filter(sr => sr.id !== payload.old.id));
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
-
-  const moveTab = (index: number, direction: 'up' | 'down') => {
-    const newTabs = [...tabConfigs];
-    const targetIndex = direction === 'up' ? index - 1 : index + 1;
-    if (targetIndex < 0 || targetIndex >= newTabs.length) return;
-    
-    const temp = newTabs[index];
-    newTabs[index] = newTabs[targetIndex];
-    newTabs[targetIndex] = temp;
-    setTabConfigs(newTabs);
-  };
-
-  const toggleTabVisibility = (id: string) => {
-    setTabConfigs(current => current.map(t => 
-      t.id === id ? { ...t, isVisible: !t.isVisible } : t
-    ));
-  };
-
-  const handleCreateSite = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSaving(true);
-    const site: Site = {
+  const handleSignIn = (phone: string) => {
+    const user: UserProfile = {
       id: crypto.randomUUID(),
-      name: newSite.name,
-      location: newSite.location,
-      code: `SITE-${Math.floor(100 + Math.random() * 900)}`,
-      status: Status.ACTIVE
+      org_id: null,
+      phone,
+      full_name: '',
+      onboarded: false
     };
-
-    const { error } = await supabase.from('sites').insert([site]);
-    if (!error) {
-      setSites(prev => [...prev, site]);
-      setShowAddSite(false);
-      setNewSite({ name: '', location: '' });
-    }
-    setIsSaving(false);
+    localStorage.setItem('fm_engine_user', JSON.stringify(user));
+    setCurrentUser(user);
   };
 
-  const handleCreateAsset = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSaving(true);
-    const asset: Asset = {
-      id: crypto.randomUUID(),
-      name: newAsset.name,
-      type: newAsset.type,
-      site_id: newAsset.site_id,
-      code: `AST-${Math.floor(1000 + Math.random() * 9000)}`,
-      status: Status.ACTIVE
-    };
+  const handleOnboardingNext = async () => {
+    if (onboardingStep < 3) {
+      setOnboardingStep(prev => prev + 1);
+    } else {
+      setIsLoading(true);
+      try {
+        const orgId = crypto.randomUUID();
+        const { error: orgErr } = await supabase.from('organizations').insert([{ id: orgId, name: onboardingData.orgName }]);
+        if (orgErr) throw orgErr;
 
-    const { error } = await supabase.from('assets').insert([asset]);
-    if (!error) {
-      setAssets(prev => [...prev, asset]);
-      setShowAddAsset(false);
-      setNewAsset({ name: '', type: 'General', site_id: '' });
+        const siteId = crypto.randomUUID();
+        const firstSite: Site = {
+          id: siteId,
+          org_id: orgId,
+          name: onboardingData.siteName,
+          location: 'HQ',
+          code: `SITE-${Math.floor(100 + Math.random() * 900)}`,
+          status: Status.ACTIVE
+        };
+        const { error: siteErr } = await supabase.from('sites').insert([firstSite]);
+        if (siteErr) throw siteErr;
+
+        const updatedUser = { 
+          ...currentUser!, 
+          full_name: onboardingData.userName, 
+          org_id: orgId,
+          onboarded: true 
+        };
+        setCurrentUser(updatedUser);
+        localStorage.setItem('fm_engine_user', JSON.stringify(updatedUser));
+        setShowOnboarding(false);
+        fetchOrgData();
+      } catch (err: any) {
+        console.error(err);
+        if (err.code === 'PGRST205') setDbStatus('needs_setup');
+      } finally {
+        setIsLoading(false);
+      }
     }
-    setIsSaving(false);
-  };
-
-  const handleCreateSR = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSaving(true);
-    const sr: ServiceRequest = {
-      id: `SR-${Math.floor(1000 + Math.random() * 9000)}`,
-      title: newSR.title,
-      description: newSR.description,
-      site_id: newSR.site_id || null,
-      asset_id: newSR.asset_id || null,
-      status: SRStatus.NEW,
-      source: SRSource.WEB,
-      created_at: new Date().toISOString()
-    };
-
-    const { error } = await supabase.from('service_requests').insert([sr]);
-    if (!error) {
-      setShowAddSR(false);
-      setNewSR({ title: '', description: '', site_id: '', asset_id: '' });
-    }
-    setIsSaving(false);
   };
 
   const updateSRStatus = async (id: string, status: SRStatus) => {
-    await supabase.from('service_requests').update({ status }).eq('id', id);
-    if (selectedSR?.id === id) setSelectedSR(prev => prev ? { ...prev, status } : null);
-  };
-
-  const deleteSR = async (id: string) => {
-    await supabase.from('service_requests').delete().eq('id', id);
-    setSelectedSR(null);
-  };
-
-  const renderContent = () => {
-    if (isLoading) return (
-      <div className="flex flex-col items-center justify-center min-h-[50vh] space-y-4">
-        <Loader2 className="w-10 h-10 text-blue-600 animate-spin" />
-        <p className="text-slate-400 font-medium animate-pulse">Synchronizing with Cloud DB...</p>
-      </div>
-    );
-
-    switch (activeTab) {
-      case 'dashboard':
-        return <Dashboard srs={srs} />;
-      case 'srs':
-        return <SRList srs={srs} sites={sites} assets={assets} onSelect={setSelectedSR} onNewRequest={() => setShowAddSR(true)} />;
-      case 'sites':
-        return (
-          <div className="space-y-6 animate-in fade-in duration-500">
-            <div className="flex justify-between items-end">
-              <div>
-                <h2 className="text-3xl font-bold text-slate-800 mb-1">Sites</h2>
-                <p className="text-slate-500 text-sm">Manage physical locations</p>
-              </div>
-              <button onClick={() => setShowAddSite(true)} className="bg-slate-900 text-white px-5 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 shadow-md hover:bg-slate-800 transition-all active:scale-95">
-                <Plus size={18} /> Add Site
-              </button>
-            </div>
-            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {sites.map(site => (
-                <div key={site.id} className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex flex-col justify-between hover:shadow-md transition-all group">
-                  <div className="mb-6">
-                    <div className="flex justify-between items-start mb-4">
-                      <div className="p-3 bg-blue-50 text-blue-600 rounded-xl">
-                        <MapPin size={24} />
-                      </div>
-                      <span className="px-2 py-0.5 bg-emerald-50 text-emerald-600 text-[10px] font-bold uppercase rounded tracking-wider">
-                        {site.status}
-                      </span>
-                    </div>
-                    <h3 className="text-xl font-bold text-slate-800 mb-0.5">{site.name}</h3>
-                    <p className="text-[11px] font-bold text-slate-400 tracking-widest uppercase mb-4">{site.code}</p>
-                    <p className="text-sm text-slate-500 font-medium">{site.location}</p>
-                  </div>
-                </div>
-              ))}
-              {sites.length === 0 && (
-                <div className="col-span-full py-20 text-center bg-white rounded-2xl border border-dashed border-slate-200">
-                  <p className="text-slate-400">No sites found.</p>
-                </div>
-              )}
-            </div>
-          </div>
-        );
-      case 'assets':
-        return (
-          <div className="space-y-6 animate-in fade-in duration-500">
-             <div className="flex justify-between items-end">
-              <div>
-                <h2 className="text-3xl font-bold text-slate-800 mb-1">Assets</h2>
-                <p className="text-slate-500 text-sm">Equipment items</p>
-              </div>
-              <button onClick={() => setShowAddAsset(true)} className="bg-slate-900 text-white px-5 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 shadow-md hover:bg-slate-800 transition-all active:scale-95">
-                <Plus size={18} /> Add Asset
-              </button>
-            </div>
-            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden overflow-x-auto">
-              <table className="w-full text-left min-w-[600px]">
-                <thead className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-50">
-                  <tr>
-                    <th className="px-6 py-4">Asset</th>
-                    <th className="px-6 py-4">Site</th>
-                    <th className="px-6 py-4">Type</th>
-                    <th className="px-6 py-4">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-50">
-                  {assets.map(asset => (
-                    <tr key={asset.id} className="hover:bg-slate-50/50 transition-colors">
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 bg-slate-100 text-slate-400 rounded-lg">
-                            <Package size={20} />
-                          </div>
-                          <div>
-                            <p className="text-sm font-bold text-slate-800">{asset.name}</p>
-                            <p className="text-[10px] text-slate-400 font-bold tracking-widest uppercase">{asset.code}</p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-sm font-medium text-slate-600">
-                        {sites.find(s => s.id === asset.site_id)?.name || 'Unknown'}
-                      </td>
-                      <td className="px-6 py-4"><span className="px-2 py-1 bg-slate-100 text-slate-600 text-[10px] font-bold uppercase rounded">{asset.type}</span></td>
-                      <td className="px-6 py-4 text-xs font-bold text-emerald-600 uppercase">{asset.status}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        );
-      case 'settings':
-        return (
-          <div className="max-w-2xl mx-auto space-y-8 animate-in fade-in duration-500 pb-12">
-             <h2 className="text-3xl font-bold text-slate-800">Settings</h2>
-             
-             {/* Navigation Customization Card */}
-             <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm space-y-6">
-                <div>
-                   <h3 className="text-lg font-bold text-slate-800 mb-1 flex items-center gap-2">
-                     Navigation Sidebar
-                   </h3>
-                   <p className="text-sm text-slate-500 mb-6">Reorder or hide tabs in your sidebar.</p>
-                   
-                   <div className="space-y-3">
-                     {tabConfigs.map((tab, index) => {
-                       const Icon = iconMap[tab.iconName];
-                       return (
-                         <div key={tab.id} className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100 transition-all hover:border-blue-200 group">
-                            <GripVertical size={16} className="text-slate-300 group-hover:text-slate-400" />
-                            <div className="p-2 bg-white rounded-xl text-slate-600 shadow-sm">
-                               <Icon size={18} />
-                            </div>
-                            <div className="flex-1">
-                               <p className="text-sm font-bold text-slate-800">{tab.label}</p>
-                               <p className="text-[10px] text-slate-400 font-medium uppercase tracking-tight">Tab ID: {tab.id}</p>
-                            </div>
-                            <div className="flex items-center gap-2">
-                               <button 
-                                 onClick={() => moveTab(index, 'up')}
-                                 disabled={index === 0}
-                                 className="p-2 text-slate-400 hover:text-blue-600 disabled:opacity-30 disabled:hover:text-slate-400 transition-colors"
-                               >
-                                 <ArrowUp size={18} />
-                               </button>
-                               <button 
-                                 onClick={() => moveTab(index, 'down')}
-                                 disabled={index === tabConfigs.length - 1}
-                                 className="p-2 text-slate-400 hover:text-blue-600 disabled:opacity-30 disabled:hover:text-slate-400 transition-colors"
-                               >
-                                 <ArrowDown size={18} />
-                               </button>
-                               <button 
-                                 onClick={() => toggleTabVisibility(tab.id)}
-                                 className={`p-2 transition-colors ${tab.isVisible ? 'text-blue-500 hover:text-blue-700' : 'text-slate-300 hover:text-slate-400'}`}
-                               >
-                                 {tab.isVisible ? <Eye size={18} /> : <EyeOff size={18} />}
-                               </button>
-                            </div>
-                         </div>
-                       );
-                     })}
-                   </div>
-                </div>
-             </div>
-
-             <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm space-y-6">
-                <div>
-                   <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
-                     <ShieldCheck className="text-blue-500" size={20} />
-                     Database Connection
-                   </h3>
-                   <div className={`p-4 rounded-2xl border flex flex-col gap-4 ${
-                     dbStatus === 'connected' ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100'
-                   }`}>
-                      <div className="flex items-center justify-between w-full">
-                        <div className="flex items-center gap-3">
-                          <div className={`w-3 h-3 rounded-full ${
-                            dbStatus === 'connected' ? 'bg-emerald-500' : 'bg-red-500'
-                          }`} />
-                          <span className={`font-bold text-sm ${
-                            dbStatus === 'connected' ? 'text-emerald-700' : 'text-red-700'
-                          }`}>
-                            {dbStatus === 'connected' ? 'Supabase Online' : 'Supabase Offline'}
-                          </span>
-                        </div>
-                        <button onClick={fetchData} className="text-xs font-bold text-blue-600 uppercase hover:underline">Refresh</button>
-                      </div>
-                   </div>
-                </div>
-             </div>
-          </div>
-        )
-      default:
-        return null;
+    if (status === SRStatus.RESOLVED) {
+      setIsClosing(true);
+      return;
+    }
+    const { data } = await supabase.from('service_requests').update({ status }).eq('id', id).select();
+    if (data) {
+      setSrs(prev => prev.map(s => s.id === id ? data[0] : s));
+      setSelectedSR(data[0]);
     }
   };
+
+  const confirmResolution = async () => {
+    if (!selectedSR) return;
+    const { data } = await supabase.from('service_requests').update({ 
+      status: SRStatus.RESOLVED, 
+      resolution_notes: resolutionNote 
+    }).eq('id', selectedSR.id).select();
+    
+    if (data) {
+      setSrs(prev => prev.map(s => s.id === selectedSR.id ? data[0] : s));
+      setSelectedSR(null);
+      setIsClosing(false);
+      setResolutionNote('');
+    }
+  };
+
+  if (dbStatus === 'needs_setup') {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6 text-white">
+        <div className="max-w-2xl w-full bg-slate-800 rounded-[40px] p-12 border border-slate-700 shadow-2xl space-y-8 animate-in zoom-in-95 duration-500">
+           <div className="flex items-center gap-4 text-amber-400 mb-2">
+              <AlertCircle size={48} />
+              <h1 className="text-4xl font-black">Database Setup Required</h1>
+           </div>
+           <p className="text-slate-400 text-lg leading-relaxed">
+             The organization-centric schema is missing. Please run the migration script in your <strong>Supabase SQL Editor</strong> to enable Client/Organization multi-tenancy.
+           </p>
+           
+           <div className="bg-black/40 rounded-3xl p-6 font-mono text-xs text-blue-300 border border-white/5 space-y-4 max-h-60 overflow-y-auto">
+              <div className="flex items-center justify-between text-slate-500 mb-2">
+                 <span className="flex items-center gap-2"><Terminal size={14} /> Migration Script</span>
+              </div>
+              <code className="block whitespace-pre">
+{`CREATE TABLE organizations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Note: Ensure ALL tables have org_id columns!`}
+              </code>
+           </div>
+           
+           <button 
+             onClick={() => window.location.reload()}
+             className="w-full bg-blue-600 hover:bg-blue-500 text-white py-5 rounded-3xl font-black text-xl transition-all shadow-xl shadow-blue-900/20"
+           >
+             I've run the SQL, Refresh App
+           </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!currentUser) return <Auth onSignIn={handleSignIn} />;
 
   return (
     <Layout 
       activeTab={activeTab} 
       onTabChange={setActiveTab} 
-      dbStatus={dbStatus === 'connected' ? 'connected' : (dbStatus === 'connecting' ? 'connecting' : 'error')}
+      dbStatus={dbStatus === 'error' ? 'error' : dbStatus === 'connected' ? 'connected' : 'connecting'}
       tabConfigs={tabConfigs}
+      orgName={organization?.name}
     >
-      {renderContent()}
-
-      {(showAddSite || showAddAsset || showAddSR) && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[60] animate-in fade-in duration-200" onClick={() => { setShowAddSite(false); setShowAddAsset(false); setShowAddSR(false); }} />
-      )}
-
-      {showAddSite && (
-        <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-white rounded-3xl shadow-2xl z-[70] p-8 animate-in zoom-in-95 duration-200">
-          <h3 className="text-xl font-bold text-slate-800 mb-6">Add New Site</h3>
-          <form onSubmit={handleCreateSite} className="space-y-4">
-            <div>
-              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Site Name</label>
-              <input required type="text" placeholder="e.g. North Wing" className="w-full bg-slate-50 border-none rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" value={newSite.name} onChange={e => setNewSite({...newSite, name: e.target.value})} />
-            </div>
-            <div>
-              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Location</label>
-              <input required type="text" placeholder="e.g. New York" className="w-full bg-slate-50 border-none rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" value={newSite.location} onChange={e => setNewSite({...newSite, location: e.target.value})} />
-            </div>
-            <div className="flex gap-3 pt-4">
-              <button type="button" onClick={() => setShowAddSite(false)} className="flex-1 py-3 text-sm font-bold text-slate-500">Cancel</button>
-              <button disabled={isSaving} type="submit" className="flex-1 bg-blue-600 text-white py-3 rounded-xl text-sm font-bold shadow-lg hover:bg-blue-700 transition-all flex items-center justify-center">
-                {isSaving ? <Loader2 size={18} className="animate-spin" /> : 'Create Site'}
-              </button>
-            </div>
-          </form>
+      {isLoading && !showOnboarding && (
+        <div className="fixed inset-0 z-[50] bg-white/50 backdrop-blur-sm flex items-center justify-center">
+          <Loader2 className="animate-spin text-blue-600" size={48} />
         </div>
       )}
 
-      {showAddAsset && (
-        <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-white rounded-3xl shadow-2xl z-[70] p-8 animate-in zoom-in-95 duration-200">
-          <h3 className="text-xl font-bold text-slate-800 mb-6">Add New Asset</h3>
-          <form onSubmit={handleCreateAsset} className="space-y-4">
-            <div>
-              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Asset Name</label>
-              <input required type="text" placeholder="e.g. AC Unit" className="w-full bg-slate-50 border-none rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" value={newAsset.name} onChange={e => setNewAsset({...newAsset, name: e.target.value})} />
-            </div>
-            <div>
-              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Type</label>
-              <select className="w-full bg-slate-50 border-none rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" value={newAsset.type} onChange={e => setNewAsset({...newAsset, type: e.target.value})}>
-                <option>General</option>
-                <option>Electrical</option>
-                <option>Mechanical</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Site</label>
-              <select required className="w-full bg-slate-50 border-none rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" value={newAsset.site_id} onChange={e => setNewAsset({...newAsset, site_id: e.target.value})}>
-                <option value="">Select a Site...</option>
-                {sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
-            </div>
-            <div className="flex gap-3 pt-4">
-              <button type="button" onClick={() => setShowAddAsset(false)} className="flex-1 py-3 text-sm font-bold text-slate-500">Cancel</button>
-              <button disabled={isSaving} type="submit" className="flex-1 bg-blue-600 text-white py-3 rounded-xl text-sm font-bold shadow-lg hover:bg-blue-700 transition-all flex items-center justify-center">
-                {isSaving ? <Loader2 size={18} className="animate-spin" /> : 'Create Asset'}
-              </button>
-            </div>
-          </form>
+      {activeTab === 'dashboard' && <Dashboard srs={srs} onNewRequest={() => setShowAddSR(true)} />}
+      {activeTab === 'srs' && <SRList srs={srs} sites={sites} assets={assets} onSelect={setSelectedSR} onNewRequest={() => setShowAddSR(true)} />}
+      {activeTab === 'tenants' && <TenantList tenants={tenants} sites={sites} onAdd={() => setShowAddTenant(true)} />}
+      {activeTab === 'assets' && <AssetList assets={assets} sites={sites} blocks={blocks} onAdd={() => setShowAddAsset(true)} />}
+      
+      {activeTab === 'sites' && (
+        <div className="space-y-8 pb-20">
+           <div className="flex justify-between items-end">
+             <div>
+               <h2 className="text-3xl font-black text-slate-900">Sites & Spaces</h2>
+               <p className="text-slate-500 font-medium">Manage buildings for {organization?.name || 'Client'}</p>
+             </div>
+             <button onClick={() => setShowAddSite(true)} className="bg-slate-900 text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 shadow-lg active:scale-95 transition-all">
+               <Plus size={20} /> Add Site
+             </button>
+           </div>
+           <div className="grid md:grid-cols-2 gap-8">
+             {sites.map(site => (
+               <div key={site.id} className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm hover:shadow-md transition-all">
+                  <div className="flex justify-between items-start mb-6">
+                    <div className="p-4 bg-blue-50 text-blue-600 rounded-2xl"><MapPin size={28} /></div>
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">ID: {site.code}</span>
+                  </div>
+                  <h3 className="text-2xl font-black text-slate-900 mb-1">{site.name}</h3>
+                  <p className="text-sm font-medium text-slate-500 mb-8">{site.location}</p>
+                  
+                  <div className="pt-8 border-t border-slate-50 space-y-4">
+                     <div className="flex items-center justify-between">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Blocks / Sub-Spaces</p>
+                        <button 
+                          onClick={() => { setActiveSiteForBlock(site.id); setShowAddBlock(true); }}
+                          className="text-xs font-bold text-blue-600 flex items-center gap-1 hover:underline"
+                        >
+                          <Plus size={14} /> Add Block
+                        </button>
+                     </div>
+                     <div className="flex flex-wrap gap-2">
+                        {blocks.filter(b => b.site_id === site.id).map(block => (
+                          <div key={block.id} className="px-4 py-2 bg-slate-50 border border-slate-100 rounded-xl flex items-center gap-2 group">
+                             <Layers size={14} className="text-slate-400" />
+                             <span className="text-xs font-bold text-slate-700">{block.name}</span>
+                             <span className="text-[8px] font-black text-slate-300 uppercase">{block.type}</span>
+                          </div>
+                        ))}
+                     </div>
+                  </div>
+               </div>
+             ))}
+           </div>
         </div>
       )}
 
-      {showAddSR && (
-        <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-lg bg-white rounded-3xl shadow-2xl z-[70] p-8 animate-in zoom-in-95 duration-200">
-          <h3 className="text-xl font-bold text-slate-800 mb-6">Create Service Request</h3>
-          <form onSubmit={handleCreateSR} className="space-y-4">
-            <div>
-              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Short Title</label>
-              <input required type="text" className="w-full bg-slate-50 border-none rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" value={newSR.title} onChange={e => setNewSR({...newSR, title: e.target.value})} />
-            </div>
-            <div>
-              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Description</label>
-              <textarea rows={3} className="w-full bg-slate-50 border-none rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 resize-none" value={newSR.description} onChange={e => setNewSR({...newSR, description: e.target.value})} />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Site</label>
-                <select className="w-full bg-slate-50 border-none rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" value={newSR.site_id} onChange={e => setNewSR({...newSR, site_id: e.target.value})}>
-                  <option value="">Unknown</option>
-                  {sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
+      {/* Onboarding Flow: User -> Org -> Site */}
+      {showOnboarding && (
+        <div className="fixed inset-0 z-[300] bg-slate-50 flex items-center justify-center p-6">
+           <div className="w-full max-w-lg bg-white rounded-[48px] p-12 shadow-2xl space-y-10 animate-in fade-in zoom-in duration-500">
+              <div className="space-y-3">
+                 <h2 className="text-4xl font-black text-slate-900">
+                   {onboardingStep === 1 ? 'Welcome aboard!' : onboardingStep === 2 ? 'The Organization' : 'The First Site'}
+                 </h2>
+                 <p className="text-slate-500 font-medium text-lg leading-relaxed">
+                   {onboardingStep === 1 ? 'Tell us your name.' : onboardingStep === 2 ? 'What is your company or apartment complex called?' : 'Where will we start maintenance?'}
+                 </p>
               </div>
-              <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Asset</label>
-                <select className="w-full bg-slate-50 border-none rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" value={newSR.asset_id} onChange={e => setNewSR({...newSR, asset_id: e.target.value})}>
-                  <option value="">Unknown</option>
-                  {assets.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-                </select>
-              </div>
-            </div>
-            <div className="flex gap-3 pt-4">
-              <button type="button" onClick={() => setShowAddSR(false)} className="flex-1 py-3 text-sm font-bold text-slate-500">Cancel</button>
-              <button disabled={isSaving} type="submit" className="flex-1 bg-blue-600 text-white py-3 rounded-xl text-sm font-bold shadow-lg hover:bg-blue-700 transition-all flex items-center justify-center">
-                {isSaving ? <Loader2 size={18} className="animate-spin" /> : 'Log Request'}
+
+              {onboardingStep === 1 && (
+                 <input autoFocus className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold text-xl border-2 border-transparent focus:border-blue-500" placeholder="Full Name" value={onboardingData.userName} onChange={e => setOnboardingData({...onboardingData, userName: e.target.value})} />
+              )}
+              {onboardingStep === 2 && (
+                 <input autoFocus className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold text-xl border-2 border-transparent focus:border-blue-500" placeholder="Organization Name" value={onboardingData.orgName} onChange={e => setOnboardingData({...onboardingData, orgName: e.target.value})} />
+              )}
+              {onboardingStep === 3 && (
+                 <input autoFocus className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold text-xl border-2 border-transparent focus:border-blue-500" placeholder="Site Name (e.g. Tower B)" value={onboardingData.siteName} onChange={e => setOnboardingData({...onboardingData, siteName: e.target.value})} />
+              )}
+
+              <button onClick={handleOnboardingNext} className="w-full bg-blue-600 text-white py-5 rounded-3xl font-black text-xl shadow-2xl shadow-blue-200 flex items-center justify-center gap-3 hover:scale-[1.02] transition-transform">
+                 Next Step <ArrowRight size={24} />
               </button>
-            </div>
-          </form>
+           </div>
         </div>
       )}
 
+      {/* Selected SR Details & Workflow */}
       {selectedSR && (
-        <div className="fixed inset-0 z-[100] flex items-end md:items-center justify-center p-0 md:p-6 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
-          <div className="bg-white w-full max-w-lg md:rounded-3xl shadow-2xl flex flex-col max-h-[95vh] animate-in slide-in-from-bottom-10 duration-500 overflow-hidden">
-            <div className="p-6 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white z-10">
-              <div className="flex items-center gap-3">
-                <span className="text-xs font-bold text-slate-400 tracking-widest uppercase">#{selectedSR.id}</span>
-                <span className={`px-2.5 py-1 text-[10px] font-bold uppercase rounded tracking-wider ${
-                  selectedSR.status === SRStatus.NEW ? 'bg-blue-100 text-blue-700' :
-                  selectedSR.status === SRStatus.IN_PROGRESS ? 'bg-amber-100 text-amber-700' :
-                  selectedSR.status === SRStatus.RESOLVED ? 'bg-emerald-100 text-emerald-700' :
-                  'bg-slate-100 text-slate-600'
-                }`}>
-                  {selectedSR.status}
-                </span>
+        <div className="fixed inset-0 z-[150] bg-slate-900/40 backdrop-blur-sm flex items-end md:items-center justify-center p-0 md:p-6">
+           <div className="bg-white w-full max-w-2xl md:rounded-[48px] shadow-2xl flex flex-col max-h-[95vh] overflow-hidden animate-in slide-in-from-bottom-20 duration-500">
+              <div className="p-8 border-b border-slate-50 flex items-center justify-between sticky top-0 bg-white">
+                 <div className="flex items-center gap-4">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">#{selectedSR.id}</span>
+                    <span className="px-4 py-1.5 bg-blue-50 text-blue-700 text-[10px] font-black uppercase rounded-full tracking-widest">{selectedSR.status}</span>
+                 </div>
+                 <button onClick={() => setSelectedSR(null)} className="p-3 hover:bg-slate-50 rounded-full transition-colors"><X size={28} /></button>
               </div>
-              <button onClick={() => setSelectedSR(null)} className="p-2 hover:bg-slate-50 rounded-full text-slate-400">
-                <X size={20} />
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-8 space-y-8">
-               <div>
-                  <h2 className="text-2xl font-bold text-slate-900 mb-3">{selectedSR.title}</h2>
-                  <div className="flex flex-wrap gap-4 text-xs font-medium text-slate-400">
-                    <span>{new Date(selectedSR.created_at).toLocaleString()}</span>
-                    <span>•</span>
-                    <span className="flex items-center gap-1 uppercase tracking-wider">Source: {selectedSR.source}</span>
-                  </div>
-               </div>
-               <div>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase mb-2">Description</p>
-                  <div className="p-5 bg-slate-50 border border-slate-100 rounded-2xl text-sm leading-relaxed text-slate-700 whitespace-pre-line">
-                    {selectedSR.description}
-                  </div>
-               </div>
-               <div className="space-y-4">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase">Update Status</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    {Object.values(SRStatus).map(s => (
-                      <button 
-                        key={s} 
-                        onClick={() => updateSRStatus(selectedSR.id, s)}
-                        className={`p-3 rounded-xl text-xs font-bold transition-all border ${
-                          selectedSR.status === s ? 'bg-blue-600 border-blue-600 text-white shadow-lg' : 'bg-white border-slate-200 text-slate-600'
-                        }`}
-                      >
-                        {s}
-                      </button>
-                    ))}
-                  </div>
-               </div>
-            </div>
-            <div className="p-6 bg-slate-50 border-t border-slate-100 flex gap-4">
-               <button onClick={() => setSelectedSR(null)} className="flex-1 bg-white border border-slate-200 py-3 rounded-xl font-bold text-sm hover:bg-slate-50 transition-colors">Close</button>
-               <button onClick={() => deleteSR(selectedSR.id)} className="w-14 h-14 bg-red-50 text-red-500 rounded-xl flex items-center justify-center hover:bg-red-100 transition-all active:scale-90"><Trash2 size={22} /></button>
-            </div>
-          </div>
+              <div className="flex-1 overflow-y-auto p-12 space-y-10">
+                 <div>
+                    <h2 className="text-4xl font-black text-slate-900 mb-6">{selectedSR.title}</h2>
+                    <p className="text-lg text-slate-500 font-medium leading-relaxed">{selectedSR.description}</p>
+                 </div>
+                 <div className="grid grid-cols-2 gap-6">
+                    <div className="p-8 bg-slate-50 rounded-[32px] space-y-1">
+                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Site</p>
+                       <p className="font-bold text-slate-800">{sites.find(s => s.id === selectedSR.site_id)?.name || 'Facility'}</p>
+                    </div>
+                    <div className="p-8 bg-slate-50 rounded-[32px] space-y-1">
+                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Created</p>
+                       <p className="font-bold text-slate-800">{new Date(selectedSR.created_at).toLocaleDateString()}</p>
+                    </div>
+                 </div>
+
+                 <div className="space-y-6">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Update Workflow</p>
+                    <div className="grid grid-cols-2 gap-4">
+                       {selectedSR.status === SRStatus.NEW && (
+                          <button onClick={() => updateSRStatus(selectedSR.id, SRStatus.IN_PROGRESS)} className="col-span-2 bg-slate-900 text-white py-6 rounded-3xl font-black text-lg flex items-center justify-center gap-3">Start Work <Wrench size={20} /></button>
+                       )}
+                       {selectedSR.status === SRStatus.IN_PROGRESS && (
+                          <>
+                             <button onClick={() => updateSRStatus(selectedSR.id, SRStatus.RESOLVED)} className="bg-blue-600 text-white py-6 rounded-3xl font-black text-lg">Mark Resolved</button>
+                             <button onClick={() => updateSRStatus(selectedSR.id, SRStatus.CLOSED)} className="bg-slate-100 text-slate-900 py-6 rounded-3xl font-black">Close Case</button>
+                          </>
+                       )}
+                       {selectedSR.status === SRStatus.RESOLVED && (
+                          <div className="col-span-2 p-8 bg-emerald-50 rounded-[32px] text-center">
+                             <CheckCircle className="mx-auto mb-3 text-emerald-500" size={32} />
+                             <p className="font-black text-emerald-800 uppercase tracking-widest text-sm">Issue Resolved</p>
+                             {selectedSR.resolution_notes && (
+                                <p className="mt-4 text-sm text-emerald-600 font-medium italic">"{selectedSR.resolution_notes}"</p>
+                             )}
+                          </div>
+                       )}
+                    </div>
+                 </div>
+              </div>
+           </div>
+        </div>
+      )}
+
+      {/* Resolution Notes Input */}
+      {isClosing && (
+        <div className="fixed inset-0 z-[250] bg-slate-900/60 backdrop-blur-xl flex items-center justify-center p-6">
+           <div className="bg-white w-full max-w-md rounded-[48px] p-12 shadow-2xl space-y-10">
+              <div className="space-y-3">
+                 <h3 className="text-3xl font-black text-slate-900">Resolution Details</h3>
+                 <p className="text-slate-500 font-medium">Document the fix for history.</p>
+              </div>
+              <textarea autoFocus rows={4} className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-[32px] p-8 outline-none font-medium text-slate-800 text-lg resize-none" placeholder="What was the fix?" value={resolutionNote} onChange={e => setResolutionNote(e.target.value)} />
+              <div className="flex gap-4">
+                 <button onClick={() => setIsClosing(false)} className="flex-1 py-4 font-bold text-slate-400">Back</button>
+                 <button onClick={confirmResolution} className="flex-2 bg-blue-600 text-white px-8 py-5 rounded-3xl font-black shadow-xl">Complete Ticket</button>
+              </div>
+           </div>
         </div>
       )}
     </Layout>

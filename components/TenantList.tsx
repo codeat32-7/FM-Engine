@@ -1,0 +1,72 @@
+
+import React from 'react';
+import { Tenant, Site, Status } from '../types';
+import { Plus, Search, User, Phone, MapPin } from 'lucide-react';
+
+interface TenantListProps {
+  tenants: Tenant[];
+  sites: Site[];
+  onAdd: () => void;
+}
+
+const TenantList: React.FC<TenantListProps> = ({ tenants, sites, onAdd }) => {
+  return (
+    <div className="space-y-6 animate-in fade-in duration-500">
+      <div className="flex justify-between items-end">
+        <div>
+          <h2 className="text-3xl font-black text-slate-900">Tenants</h2>
+          <p className="text-slate-500 font-medium text-sm">Manage occupants and residents</p>
+        </div>
+        <button onClick={onAdd} className="bg-slate-900 text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 shadow-lg shadow-slate-200 active:scale-95 transition-all">
+          <Plus size={20} /> Add Tenant
+        </button>
+      </div>
+
+      <div className="relative mb-8">
+        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+        <input 
+          type="text" 
+          placeholder="Search tenants by name or phone..." 
+          className="w-full bg-white border-2 border-slate-100 rounded-2xl py-4 pl-12 pr-4 outline-none focus:border-blue-500 transition-all font-medium text-slate-700" 
+        />
+      </div>
+
+      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {tenants.map(tenant => (
+          <div key={tenant.id} className="bg-white p-8 rounded-[32px] border border-slate-100 shadow-sm hover:shadow-xl transition-all group">
+            <div className="flex justify-between items-start mb-6">
+              <div className="w-14 h-14 bg-slate-100 rounded-2xl flex items-center justify-center text-slate-400 group-hover:bg-blue-600 group-hover:text-white transition-all">
+                <User size={28} />
+              </div>
+              <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
+                tenant.status === Status.ACTIVE ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
+              }`}>
+                {tenant.status}
+              </span>
+            </div>
+            <h3 className="text-xl font-black text-slate-900 mb-1">{tenant.name}</h3>
+            <div className="space-y-3 mt-6">
+              <div className="flex items-center gap-3 text-slate-500">
+                 <Phone size={14} className="text-slate-400" />
+                 <span className="text-sm font-bold">{tenant.phone}</span>
+              </div>
+              <div className="flex items-center gap-3 text-slate-500">
+                 <MapPin size={14} className="text-slate-400" />
+                 <span className="text-sm font-medium">{sites.find(s => s.id === tenant.site_id)?.name || 'Unknown Site'}</span>
+              </div>
+            </div>
+          </div>
+        ))}
+
+        {tenants.length === 0 && (
+          <div className="col-span-full py-20 text-center bg-white rounded-[32px] border-2 border-dashed border-slate-100">
+            <User className="w-12 h-12 text-slate-200 mx-auto mb-4" />
+            <p className="text-slate-400 font-bold">No tenants found. Start by adding one.</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default TenantList;
