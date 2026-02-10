@@ -97,42 +97,62 @@ const App: React.FC = () => {
       setDbStatus('connected');
     } catch (err: any) { 
       setDbStatus('error');
-      if (err.message.includes('requesters')) setSetupMessage("The 'requesters' table is missing. Check 'lib/supabase.ts' for SQL fix.");
+      setSetupMessage(err.message);
     }
     finally { setIsLoading(false); }
   }, [currentUser?.org_id, fetchBlocks]);
 
+  const setupRealtime = useCallback(() => {
+    if (!currentUser?.org_id) return () => {};
+    
+    const channel = supabase.channel('db-changes')
+      .on('postgres_changes', { 
+        event: 'INSERT', 
+        schema: 'public', 
+        table: 'service_requests', 
+        filter: `org_id=eq.${currentUser.org_id}` 
+      }, (payload) => {
+        setSrs(prev => [payload.new as ServiceRequest, ...prev]);
+      })
+      .on('postgres_changes', { 
+        event: 'INSERT', 
+        schema: 'public', 
+        table: 'requesters', 
+        filter: `org_id=eq.${currentUser.org_id}` 
+      }, (payload) => {
+        setRequesters(prev => [payload.new as Requester, ...prev]);
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [currentUser?.org_id]);
+
   useEffect(() => {
+    let cleanup: (() => void) | undefined;
+
     const init = async () => {
       const status = await checkSchemaReady();
       if (status.needsSetup) {
         setDbStatus('needs_setup');
-        setSetupMessage(status.error || "Missing database tables.");
+        setSetupMessage(status.error || "Database requires updates.");
         return;
       }
       
       if (currentUser && currentUser.onboarded) {
         fetchOrgData();
-        setupRealtime();
+        cleanup = setupRealtime();
       } else {
         setDbStatus('connected');
       }
     };
-    init();
-  }, [currentUser?.id, currentUser?.onboarded, fetchOrgData]);
 
-  const setupRealtime = () => {
-    if (!currentUser?.org_id) return;
-    const channel = supabase.channel('schema-db-changes')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'service_requests', filter: `org_id=eq.${currentUser.org_id}` },
-        (payload) => setSrs(prev => [payload.new as ServiceRequest, ...prev])
-      )
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'requesters', filter: `org_id=eq.${currentUser.org_id}` },
-        (payload) => setRequesters(prev => [payload.new as Requester, ...prev])
-      )
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  };
+    init();
+    return () => {
+      if (cleanup) cleanup();
+    };
+  }, [currentUser?.id, currentUser?.onboarded, fetchOrgData, setupRealtime]);
 
   const handleSignIn = async (user: UserProfile) => {
     localStorage.setItem('fm_engine_user', JSON.stringify(user));
@@ -159,18 +179,14 @@ const App: React.FC = () => {
       const { data: newTenant, error: tErr } = await supabase.from('tenants').insert([tenantData]).select().single();
       if (tErr) throw tErr;
 
-      // Update requester status
       await supabase.from('requesters').update({ status: 'approved' }).eq('id', requester.id);
       
-      // Link previous SRs to the assigned site
       await supabase.from('service_requests')
         .update({ site_id: tenantData.site_id, block_id: tenantData.block_id })
         .eq('requester_phone', requester.phone);
       
-      // Update local state and refresh
       setShowApproveModal(null);
       await fetchOrgData();
-      alert(`Tenant ${tenantData.name} approved. All their previous requests are now linked to ${sites.find(s => s.id === tenantData.site_id)?.name}.`);
     } catch (err: any) {
       alert(err.message);
     } finally {
@@ -231,7 +247,7 @@ const App: React.FC = () => {
                  <h3 className="text-xl font-black">Database Setup Required</h3>
                  <p className="font-medium text-amber-800">{setupMessage}</p>
                  <div className="bg-slate-900 rounded-2xl p-4 text-emerald-400 font-mono text-xs overflow-x-auto">
-                    <code>CREATE TABLE requesters (...); -- See lib/supabase.ts for full SQL</code>
+                    <code>ALTER TABLE service_requests ADD COLUMN requester_phone TEXT;</code>
                  </div>
                  <button onClick={() => window.location.reload()} className="bg-amber-900 text-white px-6 py-2 rounded-xl font-bold flex items-center gap-2 text-sm hover:bg-amber-950 transition-colors"><RefreshCw size={16} /> Check Again</button>
               </div>
@@ -251,7 +267,7 @@ const App: React.FC = () => {
       {activeTab === 'requesters' && (
         <div className="space-y-6 animate-in fade-in duration-500">
            <h2 className="text-3xl font-black text-slate-900">Pending Approvals</h2>
-           <p className="text-slate-500 font-medium -mt-4">Unknown numbers that texted the system.</p>
+           <p className="text-slate-500 font-medium -mt-4">Mobile numbers waiting to be assigned to units.</p>
            <div className="grid md:grid-cols-2 gap-6">
               {requesters.map(req => (
                 <div key={req.id} className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm flex flex-col justify-between hover:border-blue-200 transition-all">
@@ -268,7 +284,7 @@ const App: React.FC = () => {
                    </div>
                 </div>
               ))}
-              {requesters.length === 0 && <div className="col-span-full py-20 text-center bg-white rounded-[40px] border-2 border-dashed border-slate-100"><p className="text-slate-400 font-bold">No pending requests.</p></div>}
+              {requesters.length === 0 && <div className="col-span-full py-20 text-center bg-white rounded-[40px] border-2 border-dashed border-slate-100"><p className="text-slate-400 font-bold">No pending numbers to approve.</p></div>}
            </div>
         </div>
       )}
@@ -386,7 +402,7 @@ const App: React.FC = () => {
       {showAddBlock && (
         <div className="fixed inset-0 z-[1000] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4">
            <form onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); handleAddItem('blocks', { name: fd.get('name'), type: fd.get('type'), site_id: activeSiteForBlock }, setBlocks, () => { setShowAddBlock(false); setActiveSiteForBlock(null); }); }} className="bg-white w-full max-w-md rounded-[48px] p-12 shadow-2xl space-y-8 animate-in zoom-in duration-300">
-              <div className="flex justify-between items-center"><h3 className="text-3xl font-black text-slate-900">New Unit</h3><button type="button" onClick={() => setShowAddBlock(false)} className="p-2 bg-slate-50 rounded-full hover:bg-slate-200 transition-colors"><X size={24} /></button></div>
+              <div className="flex justify-between items-center"><h3 className="text-3xl font-black text-slate-900">New Unit</h3><button type="button" onClick={() => setShowAddBlock(false)} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200 transition-colors"><X size={24} /></button></div>
               <div className="space-y-4">
                 <input required name="name" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold focus:bg-white border-2 border-transparent focus:border-blue-500" placeholder="e.g. Unit 101" />
                 <select required name="type" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold focus:bg-white border-2 border-transparent focus:border-blue-500">

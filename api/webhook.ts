@@ -25,12 +25,12 @@ export default async function handler(req: Request) {
 
     const cleanFrom = from.replace('whatsapp:', '').replace('+', '');
 
-    // 1. Get Organization context
+    // 1. Determine the Organization context
     let orgId: string | null = null;
     let siteId: string | null = null;
     let senderName: string = 'Anonymous';
 
-    // Check if they are a known tenant
+    // Priority 1: Check if they are a known tenant
     const { data: tenant } = await supabase.from('tenants').select('org_id, site_id, name').eq('phone', cleanFrom).maybeSingle();
     
     if (tenant) {
@@ -38,12 +38,19 @@ export default async function handler(req: Request) {
       siteId = tenant.site_id;
       senderName = tenant.name;
     } else {
-      // If unknown, link to the most recent organization (standard for sandbox setups)
-      const { data: orgs } = await supabase.from('organizations').select('id').order('created_at', { ascending: false }).limit(1);
-      orgId = orgs?.[0]?.id || null;
+      // Priority 2: Check if they have messaged before as a requester (keep them in the same Org)
+      const { data: existingReq } = await supabase.from('requesters').select('org_id').eq('phone', cleanFrom).maybeSingle();
+      
+      if (existingReq) {
+        orgId = existingReq.org_id;
+      } else {
+        // Priority 3: Use the most recently created Organization in the system
+        const { data: orgs } = await supabase.from('organizations').select('id').order('created_at', { ascending: false }).limit(1);
+        orgId = orgs?.[0]?.id || null;
+      }
 
+      // If we found an Org, ensure the Requester record is present/updated
       if (orgId) {
-        // Log them for the "Approvals" tab
         await supabase.from('requesters').upsert({
           phone: cleanFrom,
           org_id: orgId,
@@ -53,7 +60,7 @@ export default async function handler(req: Request) {
     }
 
     if (!orgId) {
-      return new Response(`<?xml version="1.0" encoding="UTF-8"?><Response><Message>⚠️ Setup Error: No organization found in database. Please log in to the dashboard first to initialize the system.</Message></Response>`, {
+      return new Response(`<?xml version="1.0" encoding="UTF-8"?><Response><Message>⚠️ Setup Error: No organization found in the database. Please log in to the web dashboard first.</Message></Response>`, {
         headers: { 'Content-Type': 'text/xml' },
       });
     }
@@ -65,9 +72,9 @@ export default async function handler(req: Request) {
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         const response = await ai.models.generateContent({
           model: 'gemini-3-flash-preview',
-          contents: `Create a 3-word title for: "${body}"`,
+          contents: `Summarize this maintenance request into a 3-word title: "${body}"`,
         });
-        if (response.text) title = response.text.trim().replace(/[".]/g, '');
+        if (response.text) title = response.text.trim().replace(/[".*]/g, '');
       }
     } catch (e) { console.warn("AI extraction skipped"); }
 
@@ -86,19 +93,14 @@ export default async function handler(req: Request) {
     }]);
 
     if (srErr) {
-      // If database rejection occurs (like missing column), tell the user exactly why
-      const errorMessage = srErr.message.includes('requester_phone') 
-        ? "The 'requester_phone' column is missing from your database. Run the SQL fix in the web app."
-        : srErr.message;
-
-      return new Response(`<?xml version="1.0" encoding="UTF-8"?><Response><Message>❌ DB Error: ${errorMessage}</Message></Response>`, {
+      return new Response(`<?xml version="1.0" encoding="UTF-8"?><Response><Message>❌ DB Error: ${srErr.message}</Message></Response>`, {
         headers: { 'Content-Type': 'text/xml' },
       });
     }
 
     const reply = tenant 
       ? `✅ Ticket ${srId} logged for ${senderName}.\n\nIssue: ${title}`
-      : `✅ Ticket ${srId} received. Please wait for an administrator to approve your mobile number (+${cleanFrom}).`;
+      : `✅ Ticket ${srId} received. Please wait for an administrator to approve your access for +${cleanFrom}.`;
 
     return new Response(`<?xml version="1.0" encoding="UTF-8"?><Response><Message>${reply}</Message></Response>`, {
       headers: { 'Content-Type': 'text/xml' },
