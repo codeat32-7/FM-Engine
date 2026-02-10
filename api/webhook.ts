@@ -25,74 +25,53 @@ export default async function handler(req: Request) {
 
     const cleanFrom = from.replace('whatsapp:', '').replace('+', '');
 
-    // 1. Determine the Organization ID
+    // 1. Get Organization context
     let orgId: string | null = null;
     let siteId: string | null = null;
-    let senderName: string = 'New Requester';
+    let senderName: string = 'Anonymous';
 
-    // Try finding tenant
-    const { data: tenant, error: tenantErr } = await supabase.from('tenants').select('org_id, site_id, name').eq('phone', cleanFrom).maybeSingle();
+    // Check if they are a known tenant
+    const { data: tenant } = await supabase.from('tenants').select('org_id, site_id, name').eq('phone', cleanFrom).maybeSingle();
     
     if (tenant) {
       orgId = tenant.org_id;
       siteId = tenant.site_id;
       senderName = tenant.name;
     } else {
-      // Try finding existing requester
-      const { data: requester, error: requesterLookupErr } = await supabase.from('requesters').select('org_id').eq('phone', cleanFrom).maybeSingle();
-      
-      if (requester) {
-        orgId = requester.org_id;
-      } else {
-        // Fallback: Pick any organization if none found (for sandbox/demo)
-        const { data: orgs, error: orgLookupErr } = await supabase.from('organizations').select('id').limit(1);
-        orgId = orgs?.[0]?.id || null;
-        
-        if (orgId) {
-          // Attempt to create requester, but don't fail the whole SR if this table is missing
-          const { error: insErr } = await supabase.from('requesters').insert([{
-            phone: cleanFrom,
-            org_id: orgId,
-            status: 'pending',
-            created_at: new Date().toISOString()
-          }]);
-          
-          if (insErr) {
-             console.error("Requester Insert Error:", insErr);
-             // If table is missing, we inform the user via WhatsApp for debugging
-             if (insErr.message.includes('does not exist')) {
-               return new Response(`<?xml version="1.0" encoding="UTF-8"?><Response><Message>⚠️ Database Error: The 'requesters' table is missing. Admin needs to run the SQL migration in Supabase Editor.</Message></Response>`, {
-                 headers: { 'Content-Type': 'text/xml' },
-               });
-             }
-          }
-        }
+      // If unknown, link to the most recent organization (standard for sandbox setups)
+      const { data: orgs } = await supabase.from('organizations').select('id').order('created_at', { ascending: false }).limit(1);
+      orgId = orgs?.[0]?.id || null;
+
+      if (orgId) {
+        // Log them for the "Approvals" tab
+        await supabase.from('requesters').upsert({
+          phone: cleanFrom,
+          org_id: orgId,
+          status: 'pending'
+        }, { onConflict: 'phone' });
       }
     }
 
     if (!orgId) {
-      return new Response(`<?xml version="1.0" encoding="UTF-8"?><Response><Message>⚠️ Setup Error: No organization found. Please log in to the FM Engine web app first to create your organization.</Message></Response>`, {
+      return new Response(`<?xml version="1.0" encoding="UTF-8"?><Response><Message>⚠️ Setup Error: No organization found in database. Please log in to the dashboard first to initialize the system.</Message></Response>`, {
         headers: { 'Content-Type': 'text/xml' },
       });
     }
 
-    // 2. AI Extraction
-    let title = body.slice(0, 40);
+    // 2. AI Intelligence for title
+    let title = body.slice(0, 45);
     try {
-      if (process.env.API_KEY && body.length > 10) {
+      if (process.env.API_KEY && body.length > 5) {
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         const response = await ai.models.generateContent({
           model: 'gemini-3-flash-preview',
-          contents: `Extract a short title for this maintenance issue: "${body}"`,
-          config: {
-            systemInstruction: "Return only a 3-5 word title. No JSON, just plain text.",
-          }
+          contents: `Create a 3-word title for: "${body}"`,
         });
-        if (response.text) title = response.text.trim();
+        if (response.text) title = response.text.trim().replace(/[".]/g, '');
       }
-    } catch (e) { console.warn("AI Title Fail", e); }
+    } catch (e) { console.warn("AI extraction skipped"); }
 
-    // 3. Create Service Request
+    // 3. Insert Service Request
     const srId = `SR-${Math.floor(Math.random() * 9000) + 1000}`;
     const { error: srErr } = await supabase.from('service_requests').insert([{
       id: srId,
@@ -107,19 +86,26 @@ export default async function handler(req: Request) {
     }]);
 
     if (srErr) {
-      return new Response(`<?xml version="1.0" encoding="UTF-8"?><Response><Message>❌ DB Error: ${srErr.message}</Message></Response>`, {
+      // If database rejection occurs (like missing column), tell the user exactly why
+      const errorMessage = srErr.message.includes('requester_phone') 
+        ? "The 'requester_phone' column is missing from your database. Run the SQL fix in the web app."
+        : srErr.message;
+
+      return new Response(`<?xml version="1.0" encoding="UTF-8"?><Response><Message>❌ DB Error: ${errorMessage}</Message></Response>`, {
         headers: { 'Content-Type': 'text/xml' },
       });
     }
 
-    const confirmationMsg = `✅ Ticket ${srId} logged: "${title}".\n\nStatus: Pending Review.`;
+    const reply = tenant 
+      ? `✅ Ticket ${srId} logged for ${senderName}.\n\nIssue: ${title}`
+      : `✅ Ticket ${srId} received. Please wait for an administrator to approve your mobile number (+${cleanFrom}).`;
 
-    return new Response(`<?xml version="1.0" encoding="UTF-8"?><Response><Message>${confirmationMsg}</Message></Response>`, {
+    return new Response(`<?xml version="1.0" encoding="UTF-8"?><Response><Message>${reply}</Message></Response>`, {
       headers: { 'Content-Type': 'text/xml' },
     });
 
   } catch (error: any) {
-    return new Response(`<?xml version="1.0" encoding="UTF-8"?><Response><Message>🔥 Critical Webhook Error: ${error.message}</Message></Response>`, {
+    return new Response(`<?xml version="1.0" encoding="UTF-8"?><Response><Message>🔥 Webhook Error: ${error.message}</Message></Response>`, {
       headers: { 'Content-Type': 'text/xml' },
     });
   }

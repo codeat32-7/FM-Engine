@@ -7,17 +7,23 @@ const supabaseAnonKey = process.env?.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsI
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 /**
- * SQL FOR SUPABASE SQL EDITOR:
+ * 🛠 MASTER SCHEMA FIX (Run in Supabase SQL Editor):
  * 
- * CREATE TABLE requesters (
+ * -- 1. Fix service_requests
+ * ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS requester_phone TEXT;
+ * 
+ * -- 2. Create approval queue
+ * CREATE TABLE IF NOT EXISTS requesters (
  *   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
  *   org_id UUID REFERENCES organizations(id),
- *   phone TEXT NOT NULL,
+ *   phone TEXT NOT NULL UNIQUE,
  *   name TEXT,
  *   status TEXT DEFAULT 'pending',
  *   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
  * );
  * 
+ * -- 3. Enable Realtime
+ * ALTER TABLE service_requests REPLICA IDENTITY FULL;
  * ALTER TABLE requesters REPLICA IDENTITY FULL;
  */
 
@@ -29,15 +35,22 @@ export interface ConnectionStatus {
 
 export const checkSchemaReady = async (): Promise<ConnectionStatus> => {
   try {
-    // Check if essential tables exist
+    // Check organizations
     const { error: orgErr } = await supabase.from('organizations').select('id').limit(1);
     if (orgErr && (orgErr.code === 'PGRST205' || orgErr.message.includes('does not exist'))) {
       return { connected: false, needsSetup: true, error: "Missing 'organizations' table." };
     }
 
+    // Check service_requests column
+    const { error: srErr } = await supabase.from('service_requests').select('requester_phone').limit(1);
+    if (srErr && (srErr.message.includes('column') || srErr.message.includes('does not exist'))) {
+      return { connected: false, needsSetup: true, error: "Missing 'requester_phone' column in service_requests table." };
+    }
+
+    // Check requesters
     const { error: reqErr } = await supabase.from('requesters').select('id').limit(1);
     if (reqErr && (reqErr.code === 'PGRST205' || reqErr.message.includes('does not exist'))) {
-      return { connected: false, needsSetup: true, error: "Missing 'requesters' table. Please run the SQL migration." };
+      return { connected: false, needsSetup: true, error: "Missing 'requesters' table. Used for new user approvals." };
     }
     
     return { connected: true };
