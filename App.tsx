@@ -11,7 +11,7 @@ import TenantPortal from './components/TenantPortal';
 import { Site, Asset, ServiceRequest, SRStatus, Status, SRSource, TabConfig, UserProfile, Tenant, BlockType, Block, Organization, Requester } from './types';
 import { supabase, checkSchemaReady } from './lib/supabase';
 import { 
-  X, MapPin, Plus, Loader2, Wrench, ArrowRight, Layers, CheckCircle, Building, AlertCircle, RefreshCw, Phone, User, Package, UserCheck
+  X, MapPin, Plus, Loader2, Wrench, ArrowRight, Layers, CheckCircle, Building, AlertCircle, RefreshCw, Phone, User, Package, UserCheck, Terminal
 } from 'lucide-react';
 
 const DEFAULT_TABS: TabConfig[] = [
@@ -41,6 +41,7 @@ const App: React.FC = () => {
   
   const [isLoading, setIsLoading] = useState(false);
   const [dbStatus, setDbStatus] = useState<'connecting' | 'connected' | 'error' | 'needs_setup'>('connecting');
+  const [setupMessage, setSetupMessage] = useState<string | null>(null);
   const [tabConfigs, setTabConfigs] = useState<TabConfig[]>(() => {
     const saved = localStorage.getItem('fm_tabs');
     return saved ? JSON.parse(saved) : DEFAULT_TABS;
@@ -94,7 +95,10 @@ const App: React.FC = () => {
         await fetchBlocks(siteIds);
       }
       setDbStatus('connected');
-    } catch (err) { setDbStatus('error'); }
+    } catch (err: any) { 
+      setDbStatus('error');
+      if (err.message.includes('requesters')) setSetupMessage("The 'requesters' table is missing. Check 'lib/supabase.ts' for SQL fix.");
+    }
     finally { setIsLoading(false); }
   }, [currentUser?.org_id, fetchBlocks]);
 
@@ -103,6 +107,7 @@ const App: React.FC = () => {
       const status = await checkSchemaReady();
       if (status.needsSetup) {
         setDbStatus('needs_setup');
+        setSetupMessage(status.error || "Missing database tables.");
         return;
       }
       
@@ -157,19 +162,15 @@ const App: React.FC = () => {
       // Update requester status
       await supabase.from('requesters').update({ status: 'approved' }).eq('id', requester.id);
       
-      // Update local state
-      setTenants(prev => [newTenant, ...prev]);
-      setRequesters(prev => prev.filter(r => r.id !== requester.id));
-      setShowApproveModal(null);
-
       // Link previous SRs to the assigned site
       await supabase.from('service_requests')
         .update({ site_id: tenantData.site_id, block_id: tenantData.block_id })
         .eq('requester_phone', requester.phone);
       
-      // Refresh SR list
-      fetchOrgData();
-      alert(`Tenant ${tenantData.name} approved and assigned.`);
+      // Update local state and refresh
+      setShowApproveModal(null);
+      await fetchOrgData();
+      alert(`Tenant ${tenantData.name} approved. All their previous requests are now linked to ${sites.find(s => s.id === tenantData.site_id)?.name}.`);
     } catch (err: any) {
       alert(err.message);
     } finally {
@@ -222,6 +223,22 @@ const App: React.FC = () => {
       tabConfigs={tabConfigs}
       orgName={organization?.name}
     >
+      {dbStatus === 'needs_setup' && (
+        <div className="bg-amber-50 border-2 border-amber-200 rounded-[32px] p-8 mb-8 animate-in slide-in-from-top duration-500">
+           <div className="flex items-start gap-4 text-amber-900">
+              <AlertCircle className="shrink-0 mt-1" size={24} />
+              <div className="space-y-4">
+                 <h3 className="text-xl font-black">Database Setup Required</h3>
+                 <p className="font-medium text-amber-800">{setupMessage}</p>
+                 <div className="bg-slate-900 rounded-2xl p-4 text-emerald-400 font-mono text-xs overflow-x-auto">
+                    <code>CREATE TABLE requesters (...); -- See lib/supabase.ts for full SQL</code>
+                 </div>
+                 <button onClick={() => window.location.reload()} className="bg-amber-900 text-white px-6 py-2 rounded-xl font-bold flex items-center gap-2 text-sm hover:bg-amber-950 transition-colors"><RefreshCw size={16} /> Check Again</button>
+              </div>
+           </div>
+        </div>
+      )}
+
       {activeTab === 'dashboard' && (
         <Dashboard srs={srs} onNewRequest={() => setShowAddSR(true)} assets={assets} organization={organization} />
       )}
@@ -234,14 +251,21 @@ const App: React.FC = () => {
       {activeTab === 'requesters' && (
         <div className="space-y-6 animate-in fade-in duration-500">
            <h2 className="text-3xl font-black text-slate-900">Pending Approvals</h2>
+           <p className="text-slate-500 font-medium -mt-4">Unknown numbers that texted the system.</p>
            <div className="grid md:grid-cols-2 gap-6">
               {requesters.map(req => (
-                <div key={req.id} className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm flex flex-col justify-between">
+                <div key={req.id} className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm flex flex-col justify-between hover:border-blue-200 transition-all">
                    <div className="flex items-center gap-4 mb-6">
-                      <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center"><Phone size={24} /></div>
-                      <div><p className="text-lg font-black text-slate-900">+{req.phone}</p><p className="text-xs font-bold text-slate-400">Join request from WhatsApp</p></div>
+                      <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center"><Phone size={24} /></div>
+                      <div><p className="text-lg font-black text-slate-900">+{req.phone}</p><p className="text-xs font-bold text-slate-400 uppercase tracking-widest">WhatsApp ID</p></div>
                    </div>
-                   <button onClick={() => setShowApproveModal(req)} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-slate-800"><UserCheck size={20} /> Review Access</button>
+                   <div className="space-y-4">
+                      <div className="bg-slate-50 p-4 rounded-2xl">
+                         <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Recent Activity</p>
+                         <p className="text-sm font-bold text-slate-700">{srs.find(s => s.requester_phone === req.phone)?.title || 'No tickets yet'}</p>
+                      </div>
+                      <button onClick={() => setShowApproveModal(req)} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-slate-800"><UserCheck size={20} /> Convert to Tenant</button>
+                   </div>
                 </div>
               ))}
               {requesters.length === 0 && <div className="col-span-full py-20 text-center bg-white rounded-[40px] border-2 border-dashed border-slate-100"><p className="text-slate-400 font-bold">No pending requests.</p></div>}
@@ -350,7 +374,7 @@ const App: React.FC = () => {
               <div className="flex justify-between items-center"><h3 className="text-3xl font-black text-slate-900">New Site</h3><button type="button" onClick={() => setShowAddSite(false)} className="p-2 bg-slate-50 rounded-full hover:bg-slate-200 transition-colors"><X size={24} /></button></div>
               <div className="space-y-4">
                 <input required name="name" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold focus:bg-white border-2 border-transparent focus:border-blue-500" placeholder="Site Name" />
-                <input required name="location" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold focus:bg-white border-2 border-transparent focus:border-blue-500" placeholder="Location" />
+                <input required name="location" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold focus:border-blue-500" placeholder="Location" />
               </div>
               <button type="submit" disabled={isLoading} className="w-full bg-slate-900 text-white py-6 rounded-3xl font-black text-lg">
                 {isLoading ? <Loader2 className="animate-spin" /> : 'Create Site'}

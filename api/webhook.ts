@@ -11,126 +11,116 @@ export default async function handler(req: Request) {
     return new Response('Method Not Allowed', { status: 405 });
   }
 
+  const supabase = createClient(
+    process.env.SUPABASE_URL || '',
+    process.env.SUPABASE_ANON_KEY || ''
+  );
+
   try {
     const formData = await req.formData();
-    const body = formData.get('Body') as string;
-    const from = formData.get('From') as string; // e.g. "whatsapp:+1234567890"
+    const body = formData.get('Body') as string || '';
+    const from = formData.get('From') as string || ''; 
 
     if (!body) return new Response('No body found', { status: 400 });
 
     const cleanFrom = from.replace('whatsapp:', '').replace('+', '');
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const supabase = createClient(
-      process.env.SUPABASE_URL || '',
-      process.env.SUPABASE_ANON_KEY || ''
-    );
 
-    // 1. Handle "join [sandbox-code]" specifically
-    if (body.toLowerCase().trim().startsWith('join')) {
-      const { data: existingTenant } = await supabase.from('tenants').select('id').eq('phone', cleanFrom).maybeSingle();
-      if (existingTenant) {
-        return new Response(`<?xml version="1.0" encoding="UTF-8"?><Response><Message>👋 You are already an approved tenant! Use this chat to report issues anytime.</Message></Response>`, {
-          headers: { 'Content-Type': 'text/xml' },
-        });
-      }
+    // 1. Determine the Organization ID
+    let orgId: string | null = null;
+    let siteId: string | null = null;
+    let senderName: string = 'New Requester';
 
-      const { data: existingRequester } = await supabase.from('requesters').select('id').eq('phone', cleanFrom).maybeSingle();
+    // Try finding tenant
+    const { data: tenant, error: tenantErr } = await supabase.from('tenants').select('org_id, site_id, name').eq('phone', cleanFrom).maybeSingle();
+    
+    if (tenant) {
+      orgId = tenant.org_id;
+      siteId = tenant.site_id;
+      senderName = tenant.name;
+    } else {
+      // Try finding existing requester
+      const { data: requester, error: requesterLookupErr } = await supabase.from('requesters').select('org_id').eq('phone', cleanFrom).maybeSingle();
       
-      if (!existingRequester) {
-        const { data: orgs } = await supabase.from('organizations').select('id').limit(1);
-        const orgId = orgs?.[0]?.id;
-
-        await supabase.from('requesters').insert([{
-          phone: cleanFrom,
-          org_id: orgId,
-          status: 'pending',
-          created_at: new Date().toISOString()
-        }]);
+      if (requester) {
+        orgId = requester.org_id;
+      } else {
+        // Fallback: Pick any organization if none found (for sandbox/demo)
+        const { data: orgs, error: orgLookupErr } = await supabase.from('organizations').select('id').limit(1);
+        orgId = orgs?.[0]?.id || null;
+        
+        if (orgId) {
+          // Attempt to create requester, but don't fail the whole SR if this table is missing
+          const { error: insErr } = await supabase.from('requesters').insert([{
+            phone: cleanFrom,
+            org_id: orgId,
+            status: 'pending',
+            created_at: new Date().toISOString()
+          }]);
+          
+          if (insErr) {
+             console.error("Requester Insert Error:", insErr);
+             // If table is missing, we inform the user via WhatsApp for debugging
+             if (insErr.message.includes('does not exist')) {
+               return new Response(`<?xml version="1.0" encoding="UTF-8"?><Response><Message>⚠️ Database Error: The 'requesters' table is missing. Admin needs to run the SQL migration in Supabase Editor.</Message></Response>`, {
+                 headers: { 'Content-Type': 'text/xml' },
+               });
+             }
+          }
+        }
       }
+    }
 
-      return new Response(`<?xml version="1.0" encoding="UTF-8"?><Response><Message>🚀 Welcome to FM Engine! Your request to join has been logged. Our manager will approve your access shortly. You can still report issues by texting them here!</Message></Response>`, {
+    if (!orgId) {
+      return new Response(`<?xml version="1.0" encoding="UTF-8"?><Response><Message>⚠️ Setup Error: No organization found. Please log in to the FM Engine web app first to create your organization.</Message></Response>`, {
         headers: { 'Content-Type': 'text/xml' },
       });
     }
 
-    // 2. Identify sender (Tenant or Requester)
-    const { data: tenant } = await supabase.from('tenants').select('org_id, site_id, name').eq('phone', cleanFrom).maybeSingle();
-    let requester = null;
-    let orgId = null;
-
-    if (tenant) {
-      orgId = tenant.org_id;
-    } else {
-      const { data: existingRequester } = await supabase.from('requesters').select('org_id, phone').eq('phone', cleanFrom).maybeSingle();
-      requester = existingRequester;
-      
-      if (!requester) {
-        // Auto-create requester if number is unknown so we can log the ticket
-        const { data: orgs } = await supabase.from('organizations').select('id').limit(1);
-        orgId = orgs?.[0]?.id;
-        
-        const { data: newReq, error: reqErr } = await supabase.from('requesters').insert([{
-          phone: cleanFrom,
-          org_id: orgId,
-          status: 'pending',
-          created_at: new Date().toISOString()
-        }]).select().single();
-        
-        if (!reqErr) requester = newReq;
-      } else {
-        orgId = requester.org_id;
+    // 2. AI Extraction
+    let title = body.slice(0, 40);
+    try {
+      if (process.env.API_KEY && body.length > 10) {
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const response = await ai.models.generateContent({
+          model: 'gemini-3-flash-preview',
+          contents: `Extract a short title for this maintenance issue: "${body}"`,
+          config: {
+            systemInstruction: "Return only a 3-5 word title. No JSON, just plain text.",
+          }
+        });
+        if (response.text) title = response.text.trim();
       }
-    }
+    } catch (e) { console.warn("AI Title Fail", e); }
 
-    const siteId = tenant?.site_id || null;
-    const senderName = tenant?.name || 'New User';
-
-    // 3. AI Extraction
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: `Extract maintenance info from this WhatsApp message: "${body}"`,
-      config: {
-        systemInstruction: "You are a maintenance dispatcher assistant. Extract a concise title and an asset name hint (if any) from the message. Return as valid JSON.",
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            title: { type: Type.STRING },
-            assetNameHint: { type: Type.STRING },
-          },
-          required: ["title", "assetNameHint"]
-        }
-      }
-    });
-
-    const extracted = JSON.parse(response.text || '{}');
-
-    // 4. Save Ticket
+    // 3. Create Service Request
     const srId = `SR-${Math.floor(Math.random() * 9000) + 1000}`;
-    const newSR = {
+    const { error: srErr } = await supabase.from('service_requests').insert([{
       id: srId,
       org_id: orgId,
       site_id: siteId,
-      title: extracted.title || 'WhatsApp Request',
-      description: `[From ${senderName}]: ${body}`,
+      title: title,
+      description: body,
       requester_phone: cleanFrom,
       status: 'New',
       source: 'WhatsApp',
-      created_at: new Date().toISOString(),
-    };
+      created_at: new Date().toISOString()
+    }]);
 
-    const { error: srErr } = await supabase.from('service_requests').insert([newSR]);
-    if (srErr) throw srErr;
+    if (srErr) {
+      return new Response(`<?xml version="1.0" encoding="UTF-8"?><Response><Message>❌ DB Error: ${srErr.message}</Message></Response>`, {
+        headers: { 'Content-Type': 'text/xml' },
+      });
+    }
 
-    const confirmationMsg = tenant 
-      ? `✅ Ticket ${srId} logged for ${tenant.name}.\nTitle: ${newSR.title}`
-      : `✅ Ticket ${srId} logged. Please wait for manager approval to access your resident portal.`;
+    const confirmationMsg = `✅ Ticket ${srId} logged: "${title}".\n\nStatus: Pending Review.`;
 
     return new Response(`<?xml version="1.0" encoding="UTF-8"?><Response><Message>${confirmationMsg}</Message></Response>`, {
       headers: { 'Content-Type': 'text/xml' },
     });
+
   } catch (error: any) {
-    console.error('Webhook Error:', error);
-    return new Response(`Error: ${error.message}`, { status: 500 });
+    return new Response(`<?xml version="1.0" encoding="UTF-8"?><Response><Message>🔥 Critical Webhook Error: ${error.message}</Message></Response>`, {
+      headers: { 'Content-Type': 'text/xml' },
+    });
   }
 }
