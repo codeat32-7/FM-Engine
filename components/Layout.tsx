@@ -9,7 +9,8 @@ import {
   Wifi,
   WifiOff,
   Users,
-  Building
+  Building,
+  UserCheck
 } from 'lucide-react';
 import { TabConfig } from '../types';
 
@@ -27,7 +28,8 @@ const iconMap = {
   Wrench,
   MapPin,
   Package,
-  Users
+  Users,
+  UserCheck
 };
 
 const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange, dbStatus, tabConfigs, orgName }) => {
@@ -57,7 +59,8 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange, dbSta
         
         <nav className="flex-1 px-4 space-y-1 mt-4">
           {visibleTabs.map((tab) => {
-            const Icon = iconMap[tab.iconName];
+            // Fix: Fallback to LayoutDashboard if icon is not found to prevent React Error #130
+            const Icon = iconMap[tab.iconName] || LayoutDashboard;
             const isActive = activeTab === tab.id;
             return (
               <button
@@ -125,7 +128,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange, dbSta
 
       <nav className="md:hidden fixed bottom-0 inset-x-0 bg-white border-t border-slate-200 flex justify-around p-2 pb-safe z-40 shadow-2xl shadow-black">
         {visibleTabs.map((tab) => {
-          const Icon = iconMap[tab.iconName];
+          const Icon = iconMap[tab.iconName] || LayoutDashboard;
           const isActive = activeTab === tab.id;
           return (
             <button

@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { ServiceRequest, SRStatus, SRSource, Site, Asset } from '../types';
-import { Search, Filter, MessageSquare, Monitor, ChevronRight, Plus } from 'lucide-react';
+import { Search, Filter, MessageSquare, Monitor, ChevronRight, Plus, UserPlus } from 'lucide-react';
 
 interface SRListProps {
   srs: ServiceRequest[];
@@ -22,8 +22,8 @@ const SRList: React.FC<SRListProps> = ({ srs, sites, assets, onSelect, onNewRequ
     return matchesSearch && matchesStatus;
   });
 
-  const getSiteName = (id: string | null) => sites.find(s => s.id === id)?.name || 'Unknown Site';
-  const getAssetName = (id: string | null) => assets.find(a => a.id === id)?.name || 'Unknown Asset';
+  const getSiteName = (id: string | null) => sites.find(s => s.id === id)?.name || 'Pending Site';
+  const getAssetName = (id: string | null) => assets.find(a => a.id === id)?.name || 'General';
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -72,7 +72,9 @@ const SRList: React.FC<SRListProps> = ({ srs, sites, assets, onSelect, onNewRequ
           <div 
             key={sr.id}
             onClick={() => onSelect(sr)}
-            className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm hover:border-blue-200 transition-all cursor-pointer group"
+            className={`bg-white p-6 rounded-2xl border transition-all cursor-pointer group shadow-sm ${
+              !sr.site_id ? 'border-l-4 border-l-amber-500 border-slate-100' : 'border-slate-100 hover:border-blue-200'
+            }`}
           >
             <div className="flex items-start justify-between mb-4">
               <div className="flex items-center gap-3">
@@ -85,6 +87,11 @@ const SRList: React.FC<SRListProps> = ({ srs, sites, assets, onSelect, onNewRequ
                 }`}>
                   {sr.status}
                 </span>
+                {!sr.site_id && (
+                  <span className="flex items-center gap-1 bg-amber-50 text-amber-700 text-[9px] font-black px-2 py-0.5 rounded uppercase tracking-tighter">
+                    <UserPlus size={10} /> Pending Recognition
+                  </span>
+                )}
               </div>
               <span className="text-[11px] font-medium text-slate-400">{new Date(sr.created_at).toLocaleDateString()}</span>
             </div>
@@ -95,7 +102,9 @@ const SRList: React.FC<SRListProps> = ({ srs, sites, assets, onSelect, onNewRequ
             <div className="flex flex-wrap gap-2">
               <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-100 rounded-lg">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Site:</span>
-                <span className="text-xs font-semibold text-slate-700">{getSiteName(sr.site_id)}</span>
+                <span className={`text-xs font-semibold ${!sr.site_id ? 'text-amber-600 italic' : 'text-slate-700'}`}>
+                  {getSiteName(sr.site_id)}
+                </span>
               </div>
               <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-100 rounded-lg">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Asset:</span>

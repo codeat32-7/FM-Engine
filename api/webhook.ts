@@ -18,35 +18,79 @@ export default async function handler(req: Request) {
 
     if (!body) return new Response('No body found', { status: 400 });
 
-    const cleanFrom = from.replace('whatsapp:', '');
-
+    const cleanFrom = from.replace('whatsapp:', '').replace('+', '');
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const supabase = createClient(
       process.env.SUPABASE_URL || '',
       process.env.SUPABASE_ANON_KEY || ''
     );
 
-    // 1. Identify Organization by looking up the sender (Tenant)
-    const { data: tenant } = await supabase
-      .from('tenants')
-      .select('org_id, site_id, name')
-      .eq('phone', cleanFrom)
-      .single();
+    // 1. Handle "join [sandbox-code]" specifically
+    if (body.toLowerCase().trim().startsWith('join')) {
+      const { data: existingTenant } = await supabase.from('tenants').select('id').eq('phone', cleanFrom).maybeSingle();
+      if (existingTenant) {
+        return new Response(`<?xml version="1.0" encoding="UTF-8"?><Response><Message>👋 You are already an approved tenant! Use this chat to report issues anytime.</Message></Response>`, {
+          headers: { 'Content-Type': 'text/xml' },
+        });
+      }
 
-    if (!tenant) {
-      // For MVP: Log the request but we might want to reject unknown numbers
-      // In a real app, we'd send a reply asking them to register.
-      return new Response(`<?xml version="1.0" encoding="UTF-8"?><Response><Message>⚠️ Number not recognized. Please contact your facility manager to register ${cleanFrom}.</Message></Response>`, {
+      const { data: existingRequester } = await supabase.from('requesters').select('id').eq('phone', cleanFrom).maybeSingle();
+      
+      if (!existingRequester) {
+        const { data: orgs } = await supabase.from('organizations').select('id').limit(1);
+        const orgId = orgs?.[0]?.id;
+
+        await supabase.from('requesters').insert([{
+          phone: cleanFrom,
+          org_id: orgId,
+          status: 'pending',
+          created_at: new Date().toISOString()
+        }]);
+      }
+
+      return new Response(`<?xml version="1.0" encoding="UTF-8"?><Response><Message>🚀 Welcome to FM Engine! Your request to join has been logged. Our manager will approve your access shortly. You can still report issues by texting them here!</Message></Response>`, {
         headers: { 'Content-Type': 'text/xml' },
       });
     }
 
-    // 2. AI Extraction for details
+    // 2. Identify sender (Tenant or Requester)
+    const { data: tenant } = await supabase.from('tenants').select('org_id, site_id, name').eq('phone', cleanFrom).maybeSingle();
+    let requester = null;
+    let orgId = null;
+
+    if (tenant) {
+      orgId = tenant.org_id;
+    } else {
+      const { data: existingRequester } = await supabase.from('requesters').select('org_id, phone').eq('phone', cleanFrom).maybeSingle();
+      requester = existingRequester;
+      
+      if (!requester) {
+        // Auto-create requester if number is unknown so we can log the ticket
+        const { data: orgs } = await supabase.from('organizations').select('id').limit(1);
+        orgId = orgs?.[0]?.id;
+        
+        const { data: newReq, error: reqErr } = await supabase.from('requesters').insert([{
+          phone: cleanFrom,
+          org_id: orgId,
+          status: 'pending',
+          created_at: new Date().toISOString()
+        }]).select().single();
+        
+        if (!reqErr) requester = newReq;
+      } else {
+        orgId = requester.org_id;
+      }
+    }
+
+    const siteId = tenant?.site_id || null;
+    const senderName = tenant?.name || 'New User';
+
+    // 3. AI Extraction
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: `Extract maintenance info from: "${body}"`,
+      model: 'gemini-3-flash-preview',
+      contents: `Extract maintenance info from this WhatsApp message: "${body}"`,
       config: {
-        systemInstruction: "Analyze the message and return a concise JSON title and assetNameHint. If no asset, use 'General'.",
+        systemInstruction: "You are a maintenance dispatcher assistant. Extract a concise title and an asset name hint (if any) from the message. Return as valid JSON.",
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -61,25 +105,28 @@ export default async function handler(req: Request) {
 
     const extracted = JSON.parse(response.text || '{}');
 
-    // 3. Save Ticket under Tenant's Org/Site
+    // 4. Save Ticket
     const srId = `SR-${Math.floor(Math.random() * 9000) + 1000}`;
     const newSR = {
       id: srId,
-      org_id: tenant.org_id,
-      site_id: tenant.site_id,
+      org_id: orgId,
+      site_id: siteId,
       title: extracted.title || 'WhatsApp Request',
-      description: `[Reported by ${tenant.name}]: ${body}`,
+      description: `[From ${senderName}]: ${body}`,
+      requester_phone: cleanFrom,
       status: 'New',
       source: 'WhatsApp',
       created_at: new Date().toISOString(),
     };
 
-    const { error } = await supabase.from('service_requests').insert([newSR]);
-    if (error) throw error;
+    const { error: srErr } = await supabase.from('service_requests').insert([newSR]);
+    if (srErr) throw srErr;
 
-    const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Message>✅ Logged for ${tenant.name} at Site: ${srId}\nTitle: ${newSR.title}</Message></Response>`;
-    
-    return new Response(twiml, {
+    const confirmationMsg = tenant 
+      ? `✅ Ticket ${srId} logged for ${tenant.name}.\nTitle: ${newSR.title}`
+      : `✅ Ticket ${srId} logged. Please wait for manager approval to access your resident portal.`;
+
+    return new Response(`<?xml version="1.0" encoding="UTF-8"?><Response><Message>${confirmationMsg}</Message></Response>`, {
       headers: { 'Content-Type': 'text/xml' },
     });
   } catch (error: any) {

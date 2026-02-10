@@ -36,6 +36,7 @@ export interface UserProfile {
   phone: string;
   full_name: string;
   onboarded: boolean;
+  role?: 'admin' | 'tenant';
 }
 
 export interface Site {
@@ -49,6 +50,7 @@ export interface Site {
 
 export interface Block {
   id: string;
+  org_id: string;
   site_id: string;
   parent_block_id?: string;
   name: string;
@@ -63,6 +65,16 @@ export interface Tenant {
   name: string;
   phone: string;
   status: Status;
+  requester_id?: string;
+}
+
+export interface Requester {
+  id: string;
+  org_id: string;
+  phone: string;
+  name?: string;
+  status: 'pending' | 'approved';
+  created_at: string;
 }
 
 export interface Asset {
@@ -84,6 +96,7 @@ export interface ServiceRequest {
   site_id: string | null;
   block_id: string | null;
   asset_id: string | null;
+  requester_phone?: string;
   status: SRStatus;
   source: SRSource;
   resolution_notes?: string;
@@ -99,6 +112,6 @@ export interface ExtractedSR {
 export interface TabConfig {
   id: string;
   label: string;
-  iconName: 'LayoutDashboard' | 'Wrench' | 'MapPin' | 'Package' | 'Users';
+  iconName: 'LayoutDashboard' | 'Wrench' | 'MapPin' | 'Package' | 'Users' | 'UserCheck';
   isVisible: boolean;
 }

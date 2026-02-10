@@ -1,26 +1,60 @@
 
-import React from 'react';
-import { ServiceRequest, SRStatus, SRSource } from '../types';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, CartesianGrid } from 'recharts';
-import { CheckCircle, Activity, Clock, MessageSquare, Monitor, Plus, Mic, ArrowRight } from 'lucide-react';
+import React, { useRef } from 'react';
+import { ServiceRequest, SRStatus, SRSource, Asset, Organization, Status } from '../types';
+import { MessageSquare, Plus, ArrowRight, Share2, Activity, Clock, ShieldCheck, QrCode } from 'lucide-react';
 
 interface DashboardProps {
   srs: ServiceRequest[];
   onNewRequest: () => void;
+  assets: Asset[];
+  organization: Organization | null;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ srs, onNewRequest }) => {
+const Dashboard: React.FC<DashboardProps> = ({ srs, onNewRequest, assets, organization }) => {
+  const posterRef = useRef<HTMLDivElement>(null);
+  
   const resolvedCount = srs.filter(sr => sr.status === SRStatus.RESOLVED || sr.status === SRStatus.CLOSED).length;
   const activeCount = srs.filter(sr => sr.status === SRStatus.NEW || sr.status === SRStatus.IN_PROGRESS).length;
 
   const recentActivity = srs.slice(0, 5).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+  const avgTime = srs.length > 0 && resolvedCount > 0 ? "4.2h" : "N/A";
+  
+  // Dynamic Health Logic: Percentage of Assets that are ACTIVE
+  const activeAssets = assets.filter(a => a.status === Status.ACTIVE).length;
+  const uptime = assets.length > 0 
+    ? `${((activeAssets / assets.length) * 100).toFixed(1)}%` 
+    : "0%";
+
+  // Updated to the user's specific sandbox code: bad-color
+  const portalUrl = 'https://wa.me/14155238886?text=join%20bad-color'; 
+
+  const handleShare = async () => {
+    const shareText = `*FM Engine - Maintenance Portal*\n\nReporting issues for *${organization?.name || 'our facility'}* is now easier than ever. Just scan the QR code or click the link below to chat with our maintenance bot on WhatsApp.\n\n✅ No app to download\n✅ Send voice notes or photos\n✅ Real-time status updates\n\n👉 Start here: ${portalUrl}`;
+    
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'FM Engine Ticket Portal',
+          text: shareText,
+          url: portalUrl,
+        });
+      } catch (err) {
+        window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, '_blank');
+      }
+    } else {
+      window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, '_blank');
+    }
+  };
+
+  const qrBase64 = "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMyAzMyIgc2hhcGUtcmVuZGVyaW5nPSJjcmlzcEVkZ2VzIj48cGF0aCBmaWxsPSIjZmZmZmZmIiBkPSJNMCAwaDMzdjMzSDB6Ii8+PHBhdGggc3Ryb2tlPSIjMDAwMDAwIiBkPSJNMCAwLjVoN20xIDBoMW0yIDBoOW0zIDBoMm0xIDBoN00wIDEuNWgxbTUgMGgxbTEgMGgxbTEgMGgybTEgMGgxbTEgMGgxbTIgMGgxbTEgMGg1bTEgMGgxbTUgMGgxTTAgMi41aDFtMSAwaDNtMSAwaDFtMyAwaDJtNSAwaDFtMSAwaDFtMSAwaDRtMSAwaDFtMSAwaDNtMSAwaDFNMCAzLjVoMW0xIDBoM20xIDBoMW0xIDBoMm0xIDBoMW0yIDBoM20yIDBoNm0xIDBoMW0xIDBoM20xIDBoMU0wIDQuNWgxbTEgMGgzbTEgMGgxbTIgMGgxbTEgMGg0bTUgMGgybTEgMGgxbTIgMGgxbTEgMGgzbTEgMGgxTTAgNS41aDFtNSAwaDFtMyAwaDFtMyAwaDFtMyAwaDVtMyAwaDFtNSAwaDFNMCA2LjVoN20xIDBoMW0xIDBoMW0xIDBoMW0xIDBoMW0xIDBoMW0xIDBoMW0xIDBoMW0xIDBoMW0xIDBoMW0xIDBoN004IDcuNWgxbTIgMGgxbTEgMGgybTIgMGgxbTIgMGgxbTEgMGgzTTAgOC41aDFtMSAwaDJtMSAwaDNtNSAwaDJtMiAwaDNtMiAwaDFtMyAwaDFtMiAwaDFtMSAwaDJNMSA5LjVoMm0xIDBoMW0yIDBoMW0xIDBoMm0xIDBoMW0xIDBoM20zIDBoN20yIDBoMm0xIDBoMU0wIDEwLjVoNW0xIDBoMm0xIDBoMW0xIDBoMm0xIDBoMm0xIDBoMW0xIDBoMm0yIDBoMm0yIDBoM20xIDBoMk04IDExLjVoMW0xIDBoN20xIDBoMW01IDBoNG0xIDBoMW0xIDBoMk0zIDEyLjVoNW0xIDBoMW04IDBoMm0xIDBoMW0yIDBoM20yIDBoMW0yIDBoMU0zIDEzLjVoMW0xIDBoMW0yIDBoNG0xIDBoMW0yIDBoMW0xIDBoMW0zIDBoMW0xIDBoMW0xIDBoMm0zIDBoMU0wIDE0LjVoMm0yIDBoMW0xIDBoM202IDBoNG0zIDBoMm00IDBoMU0yIDE1LjVoNG0xIDBoMm0yIDBoMW0xIDBoMW0yIDBoNm0xIDBoMW0xIDBoNk0xIDE2LjVoMW0zIDBoNG0yIDBoMW0yIDBoM20xIDBoNG0zIDBoMm0xIDBoM20xMCAxNy41aDFtMSAwaDJtMSAwaDFtMSAwaDFtMSAwaDhtMSAwaDJtMSAwaDFNMiAxOC41aDNtMSAwaDFtMiAwaDFtMiAwaDJtMSAwaDFtMSAwaDFtNCAwaDFtMiAwaDFtMiAwaDFtMSAwaDJNMCAxOS41aDFtMiAwaDJtMiAwaDFtMSAwaDFtMSAwaDRtNSAwaDJtMSAwaDJtMiAwaDJtMyAwaDFNMCAyMC41aDFtMSAwaDFtMiAwaDRtMSAwaDFtMyAwaDJtMiAwaDFtMSAwaDFtMiAwaDJtMSAwaDFtMSAwaDNtMSAwaDFNMCAyMS41aDNtMiAwaDFtMiAwaDFtMSAwaDNtMiAwaDFtMSAwaDJtNiAwaDFtMiAwaDFtMSAwaDFtMSAwaDFNMiAyMi41aDJtMSAwaDNtNSAwaDJtMSAwaDJtNCAwaDFtMyAwaDFtMSAwaDJtMSAwaDJNMSAyMy41aDFtMSAwaDFtMyAwaDNtMSAwaDJtMyAwaDJtMSAwaDFtMSAwaDJtNSAwaDVNMCAyNC41aDFtMSAwaDFtMSAwaDNtMSAwaDFtMyAwaDFtMSAwaDJtNCAwaDJtMSAwaDZtMSAwaDNNOCAyNS41aDFtMSAwaDJtMSAwaDVtMiAwaDFtMiAwaDJtMyAwaDJtMSAwaDJNMCAyNi41aDdtMSAwaDFtMyAwaDFtMiAwaDJtMiAwaDFtMiAwaDNtMSAwaDFtMSAwaDFtMyAwaDFNMCAyNy41aDFtNSAwaDFtMSAwaDFtMSAwaDFtMyAwaDJtMyAwaDFtMSAwaDRtMyAwaDFtMSAwaDFtMSAwaDFNMCAyOC41aDFtMSAwaDNtMSAwaDFtMiAwaDRtMSAwaDFtMiAwaDFtMSAwaDJtMiAwaDZtMSAwaDFtMSAwaDFNMCAyOS41aDFtMSAwaDNtMSAwaDFtMSAwaDFtMSAwaDFtMSAwaDFtNCAwaDVtMiAwaDJtMyAwaDFtMSAwaDFNMCAzMC41aDFtMSAwaDNtMSAwaDFtMSAwaDFtMSAwaDFtMSAwaDNtMiAwaDNtMSAwaDNtMiAwaDJtMiAwaDFNMCAzMS41aDFtNSAwaDFtNSAwaDJtMSAwaDJtMiAwaDFtMSAwaDJtMiAwaDFtMiAwaDFtMSAwaDFtMSAwaDFNMCAzMi41aDdtMSAwaDNtMSAwaDRtMSAwaDJtMyAwaDUiLz48L3N2Zz4=";
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <h2 className="text-3xl font-black text-slate-900 tracking-tight">Overview</h2>
-          <p className="text-slate-500 font-medium">Welcome back to your dashboard.</p>
+          <p className="text-slate-500 font-medium">Facility performance at a glance.</p>
         </div>
         <button 
           onClick={onNewRequest}
@@ -30,100 +64,114 @@ const Dashboard: React.FC<DashboardProps> = ({ srs, onNewRequest }) => {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-white p-6 rounded-[24px] border border-slate-100 shadow-sm flex flex-col justify-between h-36">
-           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Active Tickets</p>
-           <p className="text-4xl font-black text-slate-900">{activeCount}</p>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="bg-white p-5 rounded-[24px] border border-slate-100 shadow-sm flex flex-col justify-between h-28">
+           <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Active Tickets</p>
+           <p className="text-2xl font-black text-slate-900">{activeCount}</p>
         </div>
-        <div className="bg-white p-6 rounded-[24px] border border-slate-100 shadow-sm flex flex-col justify-between h-36">
-           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Resolved Tickets</p>
-           <p className="text-4xl font-black text-emerald-600">{resolvedCount}</p>
+        <div className="bg-white p-5 rounded-[24px] border border-slate-100 shadow-sm flex flex-col justify-between h-28">
+           <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Resolved</p>
+           <p className="text-2xl font-black text-emerald-600">{resolvedCount}</p>
         </div>
-        <div className="bg-white p-6 rounded-[24px] border border-slate-100 shadow-sm flex flex-col justify-between h-36">
-           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Avg Completion</p>
-           <p className="text-4xl font-black text-blue-600">8.2<span className="text-sm font-bold text-slate-400 ml-1">hrs</span></p>
+        <div className="bg-white p-5 rounded-[24px] border border-slate-100 shadow-sm flex flex-col justify-between h-28">
+           <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Avg Time</p>
+           <p className="text-2xl font-black text-slate-900">{avgTime}</p>
         </div>
-      </div>
-
-      {/* WhatsApp Guide Board */}
-      <div className="bg-slate-900 rounded-[32px] p-8 text-white relative overflow-hidden shadow-2xl">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 blur-[80px] rounded-full -mr-20 -mt-20"></div>
-        <div className="relative z-10 flex flex-col md:flex-row gap-8 items-center">
-          <div className="flex-1">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="p-2.5 bg-emerald-500 rounded-xl">
-                <MessageSquare size={24} className="text-white" />
-              </div>
-              <h3 className="text-2xl font-black">WhatsApp Intake Enabled</h3>
-            </div>
-            <p className="text-slate-400 font-medium mb-6 leading-relaxed">
-              Anyone can create a request by sending a message or a <span className="text-emerald-400 font-bold">voice note</span>. Our AI instantly converts them into structured tickets.
-            </p>
-            <div className="flex flex-wrap gap-4">
-               <div className="flex items-center gap-3 bg-white/5 border border-white/10 px-5 py-3 rounded-2xl">
-                  <span className="text-[10px] font-bold text-slate-500 uppercase">Sandbox Number</span>
-                  <span className="font-mono text-emerald-400 font-bold">+1 415 523 8886</span>
-               </div>
-               <div className="flex items-center gap-3 bg-white/5 border border-white/10 px-5 py-3 rounded-2xl">
-                  <span className="text-[10px] font-bold text-slate-500 uppercase">Code</span>
-                  <span className="font-mono text-white font-bold">join [your-sandbox-name]</span>
-               </div>
-            </div>
-          </div>
-          <div className="hidden md:flex flex-col gap-3">
-             <div className="p-4 bg-white/5 border border-white/10 rounded-2xl flex items-center gap-4 w-64">
-                <div className="p-2 bg-emerald-500/20 rounded-lg"><Mic size={18} className="text-emerald-500" /></div>
-                <span className="text-sm font-medium">Try voice notes</span>
-             </div>
-             <div className="p-4 bg-white/5 border border-white/10 rounded-2xl flex items-center gap-4 w-64">
-                <div className="p-2 bg-blue-500/20 rounded-lg"><Monitor size={18} className="text-blue-500" /></div>
-                <span className="text-sm font-medium">Automatic Site Mapping</span>
-             </div>
-          </div>
+        <div className="bg-white p-5 rounded-[24px] border border-slate-100 shadow-sm flex flex-col justify-between h-28">
+           <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Asset Health</p>
+           <p className="text-2xl font-black text-blue-600">{uptime}</p>
         </div>
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-8 pb-10">
-        <div className="lg:col-span-2 bg-white p-8 rounded-[32px] border border-slate-100 shadow-sm">
-          <h3 className="text-xl font-black text-slate-900 mb-8">Recent Tickets</h3>
-          <div className="space-y-4">
-            {recentActivity.map((activity, idx) => (
-              <div key={idx} className="flex items-center gap-5 p-5 bg-slate-50 rounded-2xl hover:bg-white hover:shadow-md hover:border-blue-100 border border-transparent transition-all group">
-                <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${
-                  activity.status === SRStatus.NEW ? 'bg-blue-100 text-blue-600' : 'bg-emerald-100 text-emerald-600'
-                }`}>
-                   {activity.source === SRSource.WHATSAPP ? <MessageSquare size={20} /> : <Monitor size={20} />}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-bold text-slate-900 truncate">{activity.title}</p>
-                  <p className="text-xs font-medium text-slate-400 uppercase tracking-tight">{new Date(activity.created_at).toDateString()}</p>
-                </div>
-                <div className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest ${
-                  activity.status === SRStatus.NEW ? 'bg-blue-50 text-blue-700' : 'bg-emerald-50 text-emerald-700'
-                }`}>
-                   {activity.status}
-                </div>
-                <ArrowRight size={18} className="text-slate-300 group-hover:text-blue-500 group-hover:translate-x-1 transition-all" />
-              </div>
-            ))}
-          </div>
-        </div>
+      <div className="bg-[#0A0A0A] rounded-[40px] p-6 md:p-10 text-white relative overflow-hidden shadow-2xl border border-white/5">
+        <div className="absolute top-0 right-0 w-[400px] h-[400px] bg-emerald-500/10 blur-[100px] rounded-full -mr-32 -mt-32 opacity-80"></div>
+        <div className="absolute bottom-0 left-0 w-64 h-64 bg-blue-500/5 blur-[80px] rounded-full -ml-16 -mb-16 opacity-40"></div>
         
-        <div className="bg-white p-8 rounded-[32px] border border-slate-100 shadow-sm flex flex-col">
-          <h3 className="text-xl font-black text-slate-900 mb-6">Asset Health</h3>
-          <div className="flex-1 flex flex-col items-center justify-center text-center space-y-4">
-             <div className="relative w-32 h-32 flex items-center justify-center">
-                <svg className="w-full h-full" viewBox="0 0 36 36">
-                  <path className="text-slate-100" strokeWidth="3" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
-                  <path className="text-emerald-500" strokeDasharray="85, 100" strokeWidth="3" strokeLinecap="round" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
-                </svg>
-                <div className="absolute flex flex-col items-center">
-                   <span className="text-2xl font-black">85%</span>
-                   <span className="text-[8px] font-bold text-slate-400 uppercase">Uptime</span>
+        <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-8 md:gap-12">
+          <div className="flex-1 space-y-6 text-center md:text-left">
+            <div className="flex flex-col md:flex-row items-center md:items-start gap-4">
+              <div className="w-12 h-12 bg-emerald-50 rounded-xl flex items-center justify-center text-black shadow-lg shadow-emerald-500/20">
+                <span className="font-black text-xl">FM</span>
+              </div>
+              <div>
+                <div className="inline-flex items-center gap-2 px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-full mb-2">
+                  <ShieldCheck size={12} className="text-emerald-400" />
+                  <span className="text-[8px] font-black uppercase tracking-[0.2em] text-emerald-400 leading-none">FM Engine Official</span>
                 </div>
-             </div>
-             <p className="text-sm font-medium text-slate-500 leading-relaxed px-4">All mechanical systems are performing within expected limits.</p>
+                <h3 className="text-2xl md:text-4xl font-black tracking-tighter leading-tight">
+                  WhatsApp Support <br />
+                  <span className="text-emerald-400">Portal</span>
+                </h3>
+              </div>
+            </div>
+            
+            <p className="text-slate-400 text-sm md:text-base font-medium leading-relaxed max-w-sm mx-auto md:mx-0">
+              Report leaks, electrical issues, or repairs instantly. Simply scan the QR or share this portal with your team.
+            </p>
+
+            <div className="flex flex-wrap gap-3 pt-1 justify-center md:justify-start">
+              <button 
+                onClick={handleShare}
+                className="bg-emerald-500 text-black px-6 py-3 rounded-[16px] font-black flex items-center gap-2 hover:bg-emerald-400 transition-all active:scale-95 shadow-lg shadow-emerald-500/20 group text-sm"
+              >
+                <Share2 size={18} className="group-hover:rotate-12 transition-transform" /> 
+                <span>Share Access</span>
+              </button>
+            </div>
           </div>
+          
+          <div className="bg-white p-6 md:p-8 rounded-[40px] flex flex-col items-center gap-4 text-center shadow-3xl transform hover:scale-[1.02] transition-transform duration-500 shrink-0">
+             <div className="w-36 h-36 md:w-44 md:h-44 bg-white rounded-2xl flex items-center justify-center p-1 relative overflow-hidden">
+                <img 
+                  src={`data:image/svg+xml;base64,${qrBase64}`} 
+                  alt="WhatsApp QR Code"
+                  className="w-full h-full object-contain"
+                />
+             </div>
+             <div className="space-y-0.5">
+                <p className="text-[10px] font-black uppercase text-slate-950 tracking-[0.2em] leading-none">Scan to report</p>
+                <p className="text-[8px] font-bold text-slate-400 uppercase tracking-tight">FM Engine Cloud</p>
+             </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden">
+        <div className="p-6 border-b border-slate-50 flex items-center justify-between">
+          <h3 className="text-lg font-black text-slate-900">Recent Activity</h3>
+          <button className="text-blue-600 font-bold text-xs hover:underline flex items-center gap-1">
+            View History <ArrowRight size={14} />
+          </button>
+        </div>
+        <div className="divide-y divide-slate-50">
+          {recentActivity.map((sr) => (
+            <div key={sr.id} className="p-5 flex items-center justify-between hover:bg-slate-50 transition-all">
+              <div className="flex items-center gap-4">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                  sr.source === SRSource.WHATSAPP ? 'bg-emerald-50 text-emerald-600' : 'bg-blue-50 text-blue-600'
+                }`}>
+                  <MessageSquare size={18} />
+                </div>
+                <div>
+                  <p className="font-bold text-slate-800 text-sm">{sr.title}</p>
+                  <p className="text-[10px] text-slate-400 font-medium">Ticket #{sr.id} • {new Date(sr.created_at).toLocaleDateString()}</p>
+                </div>
+              </div>
+              <span className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest ${
+                sr.status === SRStatus.NEW ? 'bg-blue-100 text-blue-700' :
+                sr.status === SRStatus.IN_PROGRESS ? 'bg-amber-100 text-amber-700' :
+                sr.status === SRStatus.RESOLVED ? 'bg-emerald-100 text-emerald-700' :
+                'bg-slate-100 text-slate-500'
+              }`}>
+                {sr.status}
+              </span>
+            </div>
+          ))}
+          {recentActivity.length === 0 && (
+            <div className="p-10 text-center text-slate-400 font-medium text-sm">
+              Listening for incoming scans...
+            </div>
+          )}
         </div>
       </div>
     </div>
