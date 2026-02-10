@@ -11,7 +11,7 @@ import TenantPortal from './components/TenantPortal';
 import { Site, Asset, ServiceRequest, SRStatus, Status, SRSource, TabConfig, UserProfile, Tenant, BlockType, Block, Organization, Requester } from './types';
 import { supabase, checkSchemaReady } from './lib/supabase';
 import { 
-  X, MapPin, Plus, Loader2, Wrench, ArrowRight, Layers, CheckCircle, Building, AlertCircle, RefreshCw, Phone, User, Package, UserCheck, Terminal
+  X, MapPin, Plus, Loader2, Wrench, ArrowRight, Layers, CheckCircle, Building, AlertCircle, RefreshCw, Phone, User, Package, UserCheck, Terminal, Rocket
 } from 'lucide-react';
 
 const DEFAULT_TABS: TabConfig[] = [
@@ -22,6 +22,70 @@ const DEFAULT_TABS: TabConfig[] = [
   { id: 'requesters', label: 'Approvals', iconName: 'UserCheck', isVisible: true },
   { id: 'assets', label: 'Assets', iconName: 'Package', isVisible: true },
 ];
+
+const Onboarding: React.FC<{ user: UserProfile, onComplete: (org: Organization) => void }> = ({ user, onComplete }) => {
+  const [name, setName] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSetup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name) return;
+    setLoading(true);
+    try {
+      // 1. Create Org
+      const { data: org, error: orgErr } = await supabase.from('organizations').insert([{ name }]).select().single();
+      if (orgErr) throw orgErr;
+
+      // 2. Create/Update Profile
+      const { error: profErr } = await supabase.from('profiles').upsert({
+        id: user.id,
+        org_id: org.id,
+        phone: user.phone,
+        full_name: user.full_name || 'Admin'
+      }, { onConflict: 'id' });
+      if (profErr) throw profErr;
+
+      onComplete(org);
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+      <div className="max-w-md w-full bg-white rounded-[48px] p-12 shadow-2xl border border-slate-100 text-center space-y-8 animate-in zoom-in duration-500">
+        <div className="w-20 h-20 bg-blue-600 rounded-3xl mx-auto flex items-center justify-center text-white shadow-xl shadow-blue-100">
+          <Rocket size={40} strokeWidth={2.5} />
+        </div>
+        <div className="space-y-2">
+          <h2 className="text-3xl font-black text-slate-900">Let's Get Started</h2>
+          <p className="text-slate-500 font-medium">Create your first facility organization.</p>
+        </div>
+        <form onSubmit={handleSetup} className="space-y-6">
+          <div>
+            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-1 text-left">Organization Name</label>
+            <input 
+              required
+              autoFocus
+              className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 focus:bg-white rounded-3xl p-6 outline-none font-bold text-lg transition-all"
+              placeholder="e.g. Cyberspace Towers"
+              value={name}
+              onChange={e => setName(e.target.value)}
+            />
+          </div>
+          <button 
+            disabled={loading || !name}
+            className="w-full bg-slate-900 text-white py-6 rounded-3xl font-black text-xl flex items-center justify-center gap-3 hover:bg-slate-800 disabled:opacity-50 transition-all shadow-xl shadow-slate-200"
+          >
+            {loading ? <Loader2 className="animate-spin" /> : <>Launch Platform <ArrowRight /></>}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+};
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -164,6 +228,14 @@ const App: React.FC = () => {
     setCurrentUser(null);
   };
 
+  const handleOnboardingComplete = (org: Organization) => {
+    if (!currentUser) return;
+    const updatedUser = { ...currentUser, org_id: org.id, onboarded: true };
+    localStorage.setItem('fm_engine_user', JSON.stringify(updatedUser));
+    setCurrentUser(updatedUser);
+    setOrganization(org);
+  };
+
   const handleApproveTenant = async (requester: Requester, formData: FormData) => {
     setIsLoading(true);
     try {
@@ -230,6 +302,9 @@ const App: React.FC = () => {
 
   if (!currentUser) return <Auth onSignIn={handleSignIn} />;
   if (currentUser.role === 'tenant') return <TenantPortal user={currentUser} onLogout={handleLogout} />;
+  
+  // New Onboarding Logic
+  if (!currentUser.onboarded) return <Onboarding user={currentUser} onComplete={handleOnboardingComplete} />;
 
   return (
     <Layout 
