@@ -9,7 +9,7 @@ import Auth from './components/Auth';
 import { Site, Asset, ServiceRequest, SRStatus, Status, SRSource, TabConfig, UserProfile, Tenant, BlockType, Block, Organization } from './types';
 import { supabase, checkSchemaReady } from './lib/supabase';
 import { 
-  X, MapPin, Plus, Loader2, Wrench, ArrowRight, Layers, CheckCircle, Building, AlertCircle, Terminal, RefreshCw
+  X, MapPin, Plus, Loader2, Wrench, ArrowRight, Layers, CheckCircle, Building, AlertCircle, RefreshCw
 } from 'lucide-react';
 
 const DEFAULT_TABS: TabConfig[] = [
@@ -39,7 +39,6 @@ const App: React.FC = () => {
   const [dbStatus, setDbStatus] = useState<'connecting' | 'connected' | 'error' | 'needs_setup'>('connecting');
   const [tabConfigs] = useState<TabConfig[]>(() => DEFAULT_TABS);
 
-  // Onboarding Step State
   const [onboardingStep, setOnboardingStep] = useState(1);
   const [onboardingData, setOnboardingData] = useState({ 
     userName: '', 
@@ -120,7 +119,7 @@ const App: React.FC = () => {
 
   const handleSignIn = (phone: string) => {
     const user: UserProfile = {
-      id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36),
+      id: crypto.randomUUID(),
       org_id: null,
       phone,
       full_name: '',
@@ -132,7 +131,6 @@ const App: React.FC = () => {
   };
 
   const handleOnboardingNext = async () => {
-    // Basic validation
     if (onboardingStep === 1 && !onboardingData.userName) return;
     if (onboardingStep === 2 && !onboardingData.orgName) return;
 
@@ -142,26 +140,27 @@ const App: React.FC = () => {
       if (!onboardingData.siteName) return;
       setIsLoading(true);
       try {
-        const orgId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36);
+        // Create Org first to get real UUID
+        const { data: orgData, error: orgErr } = await supabase
+          .from('organizations')
+          .insert([{ name: onboardingData.orgName }])
+          .select()
+          .single();
         
-        // 1. Create Organization
-        const { error: orgErr } = await supabase.from('organizations').insert([{ id: orgId, name: onboardingData.orgName }]);
         if (orgErr) throw orgErr;
+        const orgId = orgData.id;
 
-        // 2. Create Site
-        const siteId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36);
-        const firstSite: Site = {
-          id: siteId,
+        // Create Site linked to Org
+        const { error: siteErr } = await supabase.from('sites').insert([{
           org_id: orgId,
           name: onboardingData.siteName,
-          location: 'HQ',
-          code: `SITE-${Math.floor(100 + Math.random() * 900)}`,
+          location: 'Main Site',
+          code: `SITE-${Math.floor(1000 + Math.random() * 9000)}`,
           status: Status.ACTIVE
-        };
-        const { error: siteErr } = await supabase.from('sites').insert([firstSite]);
+        }]);
+        
         if (siteErr) throw siteErr;
 
-        // 3. Finalize User
         const updatedUser = { 
           ...currentUser!, 
           full_name: onboardingData.userName, 
@@ -170,10 +169,10 @@ const App: React.FC = () => {
         };
         
         localStorage.setItem('fm_engine_user', JSON.stringify(updatedUser));
-        setCurrentUser(updatedUser); // This triggers the useEffect to fetch data
+        setCurrentUser(updatedUser);
       } catch (err: any) {
-        console.error("Onboarding logic failed:", err);
-        alert(`Setup Failed: ${err.message}. Please ensure the SQL script was run successfully in your Supabase dashboard.`);
+        console.error("Setup Error:", err);
+        alert(`Setup Failed: ${err.message}`);
       } finally {
         setIsLoading(false);
       }
@@ -185,7 +184,7 @@ const App: React.FC = () => {
       setIsClosing(true);
       return;
     }
-    const { data } = await supabase.from('service_requests').update({ status }).eq('id', id).select();
+    const { data, error } = await supabase.from('service_requests').update({ status }).eq('id', id).select();
     if (data) {
       setSrs(prev => prev.map(s => s.id === id ? data[0] : s));
       setSelectedSR(data[0]);
@@ -207,34 +206,23 @@ const App: React.FC = () => {
     }
   };
 
-  // --- RENDER HIERARCHY ---
-
-  // 1. Critical Setup Check
   if (dbStatus === 'needs_setup') {
     return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6 text-white">
-        <div className="max-w-2xl w-full bg-slate-800 rounded-[40px] p-12 border border-slate-700 shadow-2xl space-y-8">
-           <div className="flex items-center gap-4 text-amber-400 mb-2">
-              <AlertCircle size={48} />
-              <h1 className="text-4xl font-black">Final SQL Needed</h1>
-           </div>
-           <p className="text-slate-400 text-lg">
-             The tables aren't matching the code. Please run the <strong>Clean Reset SQL</strong> script in your Supabase Editor to fix this instantly.
-           </p>
-           <button onClick={() => window.location.reload()} className="w-full bg-blue-600 hover:bg-blue-500 text-white py-5 rounded-3xl font-black text-xl flex items-center justify-center gap-3">
-             <RefreshCw size={24} /> Already Ran SQL, Refresh App
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6 text-white text-center">
+        <div className="max-w-md w-full bg-slate-800 rounded-[40px] p-12 border border-slate-700 shadow-2xl space-y-8">
+           <AlertCircle size={64} className="mx-auto text-amber-400" />
+           <h1 className="text-3xl font-black">Database Setup Required</h1>
+           <p className="text-slate-400 font-medium">Please run the Final SQL script in your Supabase SQL Editor to continue.</p>
+           <button onClick={() => window.location.reload()} className="w-full bg-blue-600 py-4 rounded-3xl font-black flex items-center justify-center gap-3">
+             <RefreshCw size={20} /> Refresh App
            </button>
         </div>
       </div>
     );
   }
 
-  // 2. Auth Guard
-  if (!currentUser) {
-    return <Auth onSignIn={handleSignIn} />;
-  }
+  if (!currentUser) return <Auth onSignIn={handleSignIn} />;
 
-  // 3. Onboarding Guard (Prevents Flicker)
   if (!currentUser.onboarded) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
@@ -246,7 +234,7 @@ const App: React.FC = () => {
             )}
             
             <div className="flex items-center justify-between">
-              <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center text-white font-black text-xl shadow-lg">F</div>
+              <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center text-white font-black text-xl">F</div>
               <div className="flex gap-2">
                  {[1,2,3].map(s => (
                    <div key={s} className={`w-8 h-2 rounded-full transition-all ${onboardingStep >= s ? 'bg-blue-600' : 'bg-slate-100'}`} />
@@ -256,22 +244,22 @@ const App: React.FC = () => {
 
             <div className="space-y-3">
                <h2 className="text-4xl font-black text-slate-900">
-                 {onboardingStep === 1 ? 'Hello!' : onboardingStep === 2 ? 'The Company' : 'The First Site'}
+                 {onboardingStep === 1 ? 'Hello!' : onboardingStep === 2 ? 'Organization' : 'Site Name'}
                </h2>
                <p className="text-slate-500 font-medium text-lg">
-                 {onboardingStep === 1 ? 'What is your full name?' : onboardingStep === 2 ? 'What is your organization called?' : 'Name your first building or site.'}
+                 {onboardingStep === 1 ? 'What is your name?' : onboardingStep === 2 ? 'What is your company called?' : 'Name your first facility.'}
                </p>
             </div>
 
             <div className="space-y-4">
               {onboardingStep === 1 && (
-                 <input autoFocus className="w-full bg-slate-50 rounded-2xl p-6 outline-none font-bold text-xl border-2 border-transparent focus:border-blue-500 shadow-inner" placeholder="Your Name" value={onboardingData.userName} onChange={e => setOnboardingData({...onboardingData, userName: e.target.value})} />
+                 <input autoFocus className="w-full bg-slate-50 rounded-2xl p-6 outline-none font-bold text-xl border-2 border-transparent focus:border-blue-500" placeholder="Your Name" value={onboardingData.userName} onChange={e => setOnboardingData({...onboardingData, userName: e.target.value})} />
               )}
               {onboardingStep === 2 && (
-                 <input autoFocus className="w-full bg-slate-50 rounded-2xl p-6 outline-none font-bold text-xl border-2 border-transparent focus:border-blue-500 shadow-inner" placeholder="Org Name" value={onboardingData.orgName} onChange={e => setOnboardingData({...onboardingData, orgName: e.target.value})} />
+                 <input autoFocus className="w-full bg-slate-50 rounded-2xl p-6 outline-none font-bold text-xl border-2 border-transparent focus:border-blue-500" placeholder="e.g. Acme Corp" value={onboardingData.orgName} onChange={e => setOnboardingData({...onboardingData, orgName: e.target.value})} />
               )}
               {onboardingStep === 3 && (
-                 <input autoFocus className="w-full bg-slate-50 rounded-2xl p-6 outline-none font-bold text-xl border-2 border-transparent focus:border-blue-500 shadow-inner" placeholder="e.g. Building B" value={onboardingData.siteName} onChange={e => setOnboardingData({...onboardingData, siteName: e.target.value})} />
+                 <input autoFocus className="w-full bg-slate-50 rounded-2xl p-6 outline-none font-bold text-xl border-2 border-transparent focus:border-blue-500" placeholder="e.g. Downtown Office" value={onboardingData.siteName} onChange={e => setOnboardingData({...onboardingData, siteName: e.target.value})} />
               )}
 
               <button 
@@ -279,7 +267,7 @@ const App: React.FC = () => {
                 disabled={isLoading}
                 className="w-full bg-blue-600 text-white py-6 rounded-3xl font-black text-xl flex items-center justify-center gap-3 active:scale-95 disabled:opacity-50"
               >
-                 {onboardingStep === 3 ? 'Complete Setup' : 'Continue'} <ArrowRight size={24} />
+                 {onboardingStep === 3 ? 'Finish Setup' : 'Continue'} <ArrowRight size={24} />
               </button>
             </div>
          </div>
@@ -287,7 +275,6 @@ const App: React.FC = () => {
     );
   }
 
-  // 4. Main App (Onboarding Complete)
   return (
     <Layout 
       activeTab={activeTab} 
@@ -306,7 +293,7 @@ const App: React.FC = () => {
            <div className="flex justify-between items-end">
              <div>
                <h2 className="text-3xl font-black text-slate-900">Sites</h2>
-               <p className="text-slate-500 font-medium">Buildings for {organization?.name}</p>
+               <p className="text-slate-500 font-medium">Facility portfolio for {organization?.name}</p>
              </div>
              <button onClick={() => setShowAddSite(true)} className="bg-slate-900 text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2">
                <Plus size={20} /> Add Site
@@ -343,25 +330,24 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Selected SR Details */}
       {selectedSR && (
         <div className="fixed inset-0 z-[150] bg-slate-900/40 backdrop-blur-sm flex items-end md:items-center justify-center p-0 md:p-6">
            <div className="bg-white w-full max-w-2xl md:rounded-[48px] shadow-2xl flex flex-col max-h-[95vh] overflow-hidden">
               <div className="p-8 border-b border-slate-50 flex items-center justify-between sticky top-0 bg-white">
                  <div className="flex items-center gap-4">
-                    <span className="text-[10px] font-black text-slate-400">#{selectedSR.id}</span>
-                    <span className="px-4 py-1.5 bg-blue-50 text-blue-700 text-[10px] font-black uppercase rounded-full">{selectedSR.status}</span>
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">#{selectedSR.id}</span>
+                    <span className="px-4 py-1.5 bg-blue-50 text-blue-700 text-[10px] font-black uppercase rounded-full tracking-widest">{selectedSR.status}</span>
                  </div>
                  <button onClick={() => setSelectedSR(null)} className="p-3 hover:bg-slate-50 rounded-full transition-colors"><X size={28} /></button>
               </div>
               <div className="flex-1 overflow-y-auto p-12 space-y-10">
                  <div>
                     <h2 className="text-4xl font-black text-slate-900 mb-6">{selectedSR.title}</h2>
-                    <p className="text-lg text-slate-500 font-medium">{selectedSR.description}</p>
+                    <p className="text-lg text-slate-500 font-medium leading-relaxed">{selectedSR.description}</p>
                  </div>
                  <div className="grid grid-cols-2 gap-4">
-                    <button onClick={() => updateSRStatus(selectedSR.id, SRStatus.IN_PROGRESS)} className="bg-slate-900 text-white py-6 rounded-3xl font-black">Start Work</button>
-                    <button onClick={() => updateSRStatus(selectedSR.id, SRStatus.RESOLVED)} className="bg-blue-600 text-white py-6 rounded-3xl font-black">Resolve</button>
+                    <button onClick={() => updateSRStatus(selectedSR.id, SRStatus.IN_PROGRESS)} className="bg-slate-900 text-white py-6 rounded-3xl font-black text-lg">Start Work</button>
+                    <button onClick={() => updateSRStatus(selectedSR.id, SRStatus.RESOLVED)} className="bg-blue-600 text-white py-6 rounded-3xl font-black text-lg">Resolve</button>
                  </div>
               </div>
            </div>
@@ -372,10 +358,10 @@ const App: React.FC = () => {
         <div className="fixed inset-0 z-[250] bg-slate-900/60 backdrop-blur-xl flex items-center justify-center p-6">
            <div className="bg-white w-full max-w-md rounded-[48px] p-12 shadow-2xl space-y-10">
               <h3 className="text-3xl font-black text-slate-900">Resolution Details</h3>
-              <textarea autoFocus rows={4} className="w-full bg-slate-50 rounded-[32px] p-8 outline-none font-medium text-lg" placeholder="What was the fix?" value={resolutionNote} onChange={e => setResolutionNote(e.target.value)} />
+              <textarea autoFocus rows={4} className="w-full bg-slate-50 rounded-[32px] p-8 outline-none font-medium text-lg" placeholder="How did you fix it?" value={resolutionNote} onChange={e => setResolutionNote(e.target.value)} />
               <div className="flex gap-4">
                  <button onClick={() => setIsClosing(false)} className="flex-1 py-4 font-bold text-slate-400">Cancel</button>
-                 <button onClick={confirmResolution} className="flex-2 bg-blue-600 text-white px-8 py-5 rounded-3xl font-black">Complete</button>
+                 <button onClick={confirmResolution} className="flex-2 bg-blue-600 text-white px-8 py-5 rounded-3xl font-black">Close Ticket</button>
               </div>
            </div>
         </div>
