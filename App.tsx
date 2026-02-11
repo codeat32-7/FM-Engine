@@ -89,14 +89,14 @@ const Onboarding: React.FC<{ user: UserProfile, onComplete: (user: UserProfile) 
           <div className="space-y-6 animate-in slide-in-from-right duration-300">
             <h2 className="text-3xl font-black text-slate-900 leading-tight">Your Identity</h2>
             <input autoFocus className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 focus:bg-white rounded-3xl p-6 outline-none font-bold text-lg" placeholder="Admin Full Name" value={adminName} onChange={e => setAdminName(e.target.value)} />
-            <button disabled={!adminName} onClick={() => setStep(2)} className="w-full bg-slate-900 text-white py-6 rounded-3xl font-black flex items-center justify-center gap-3">Continue <ArrowRight /></button>
+            <button disabled={!adminName} onClick={() => setStep(2)} className="w-full bg-slate-900 text-white py-6 rounded-3xl font-black flex items-center justify-center gap-3 transition-all hover:bg-slate-800">Continue <ArrowRight /></button>
           </div>
         )}
         {step === 2 && (
           <div className="space-y-6 animate-in slide-in-from-right duration-300">
             <h2 className="text-3xl font-black text-slate-900">Organization</h2>
             <input autoFocus className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 focus:bg-white rounded-3xl p-6 outline-none font-bold text-lg" placeholder="e.g. Skyline Towers" value={orgName} onChange={e => setOrgName(e.target.value)} />
-            <button disabled={!orgName} onClick={() => setStep(3)} className="w-full bg-slate-900 text-white py-6 rounded-3xl font-black flex items-center justify-center gap-3">Continue <ArrowRight /></button>
+            <button disabled={!orgName} onClick={() => setStep(3)} className="w-full bg-slate-900 text-white py-6 rounded-3xl font-black flex items-center justify-center gap-3 transition-all hover:bg-slate-800">Continue <ArrowRight /></button>
           </div>
         )}
         {step === 3 && (
@@ -106,7 +106,7 @@ const Onboarding: React.FC<{ user: UserProfile, onComplete: (user: UserProfile) 
               <input autoFocus className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 focus:bg-white rounded-3xl p-5 outline-none font-bold" placeholder="Site Name" value={siteName} onChange={e => setSiteName(e.target.value)} />
               <input className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 focus:bg-white rounded-3xl p-5 outline-none font-bold" placeholder="Location" value={siteLocation} onChange={e => setSiteLocation(e.target.value)} />
             </div>
-            <button disabled={loading || !siteName || !siteLocation} onClick={handleSetup} className="w-full bg-blue-600 text-white py-6 rounded-3xl font-black flex items-center justify-center gap-3">
+            <button disabled={loading || !siteName || !siteLocation} onClick={handleSetup} className="w-full bg-blue-600 text-white py-6 rounded-3xl font-black flex items-center justify-center gap-3 transition-all hover:bg-blue-700">
               {loading ? <Loader2 className="animate-spin" /> : <>Complete Setup <Rocket /></>}
             </button>
           </div>
@@ -163,9 +163,9 @@ const App: React.FC = () => {
     if (data) setBlocks(data);
   }, []);
 
-  const fetchOrgData = useCallback(async () => {
+  const fetchOrgData = useCallback(async (silent: boolean = false) => {
     if (!currentUser?.org_id) return;
-    setIsLoading(true);
+    if (!silent) setIsLoading(true);
     try {
       const { data: orgData } = await supabase.from('organizations').select('*').eq('id', currentUser.org_id).single();
       if (orgData) setOrganization(orgData);
@@ -190,13 +190,13 @@ const App: React.FC = () => {
       setDbStatus('connected');
     } catch (err: any) { 
       setDbStatus('error');
-    } finally { setIsLoading(false); }
+    } finally { if (!silent) setIsLoading(false); }
   }, [currentUser?.org_id, fetchBlocks]);
 
   const syncOrphanedRequesters = useCallback(async () => {
     if (!currentUser?.org_id) return;
     
-    // 1. Get all tickets sent via WhatsApp
+    // 1. Get all tickets sent via WhatsApp for this org
     const { data: whatsappSRs } = await supabase
       .from('service_requests')
       .select('requester_phone')
@@ -212,10 +212,11 @@ const App: React.FC = () => {
     const { data: existingRequesters } = await supabase.from('requesters').select('phone').in('phone', phones);
     const loggedPhones = new Set(existingRequesters?.map(r => r.phone) || []);
     
-    // 3. Identify phones that aren't registered tenants
+    // 3. Identify phones that aren't registered tenants (profiles)
     const { data: existingTenants } = await supabase.from('tenants').select('phone').in('phone', phones);
     const registeredPhones = new Set(existingTenants?.map(t => t.phone) || []);
     
+    // Strangers = (phones in WhatsApp SRs) MINUS (already in requesters OR already a registered tenant)
     const unknownPhones = phones.filter(p => p && !registeredPhones.has(p) && !loggedPhones.has(p));
 
     // 4. Populate Approval queue ONLY for truly unknown WhatsApp users
@@ -226,10 +227,11 @@ const App: React.FC = () => {
         status: 'pending' 
       }));
       await supabase.from('requesters').upsert(inserts, { onConflict: 'phone' });
-      
-      const { data: updatedReqs } = await supabase.from('requesters').select('*').eq('org_id', currentUser.org_id).eq('status', 'pending');
-      if (updatedReqs) setRequesters(updatedReqs);
     }
+    
+    // Always re-fetch pending requesters to ensure state is fresh
+    const { data: updatedReqs } = await supabase.from('requesters').select('*').eq('org_id', currentUser.org_id).eq('status', 'pending');
+    if (updatedReqs) setRequesters(updatedReqs);
   }, [currentUser?.org_id]);
 
   useEffect(() => {
@@ -238,6 +240,13 @@ const App: React.FC = () => {
       syncOrphanedRequesters();
     }
   }, [currentUser?.org_id, fetchOrgData, syncOrphanedRequesters]);
+
+  const handleManualRefresh = async () => {
+    setIsLoading(true);
+    await syncOrphanedRequesters();
+    await fetchOrgData(true);
+    setIsLoading(false);
+  };
 
   const handleSignIn = (user: UserProfile) => {
     localStorage.setItem('fm_engine_user', JSON.stringify(user));
@@ -294,7 +303,7 @@ const App: React.FC = () => {
   };
 
   const handleRejectRequester = async (requester: Requester) => {
-    if (!confirm(`Are you sure you want to reject +${requester.phone}? They will no longer appear in the queue.`)) return;
+    if (!confirm(`Are you sure you want to reject +${requester.phone}? They will no longer appear in the queue even if they message again.`)) return;
     setIsLoading(true);
     try {
       await supabase.from('requesters').update({ status: 'rejected' }).eq('id', requester.id);
@@ -315,13 +324,22 @@ const App: React.FC = () => {
       
       {activeTab === 'requesters' && (
         <div className="space-y-6 animate-in fade-in duration-500">
-          <div>
-            <h2 className="text-3xl font-black text-slate-900">Approvals</h2>
-            <p className="text-slate-500 font-medium">Strangers who messaged on WhatsApp.</p>
+          <div className="flex justify-between items-end">
+            <div>
+              <h2 className="text-3xl font-black text-slate-900">Approvals</h2>
+              <p className="text-slate-500 font-medium">Verify WhatsApp identities to grant dashboard access.</p>
+            </div>
+            <button 
+              onClick={handleManualRefresh} 
+              disabled={isLoading}
+              className="p-3 bg-white border border-slate-100 rounded-2xl text-slate-400 hover:text-blue-600 hover:border-blue-100 transition-all active:scale-90 shadow-sm"
+            >
+              <RefreshCw size={20} className={isLoading ? 'animate-spin' : ''} />
+            </button>
           </div>
           <div className="grid md:grid-cols-2 gap-6">
             {requesters.map(req => (
-              <div key={req.id} className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm flex flex-col justify-between hover:border-blue-200 transition-all">
+              <div key={req.id} className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm flex flex-col justify-between hover:border-blue-200 transition-all animate-in slide-in-from-bottom-4 duration-300">
                 <div className="flex items-center gap-4 mb-6">
                   <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center"><Phone size={24} /></div>
                   <div>
@@ -330,7 +348,7 @@ const App: React.FC = () => {
                   </div>
                 </div>
                 <div className="flex gap-3">
-                  <button onClick={() => setShowApproveModal(req)} className="flex-1 bg-slate-900 text-white py-4 rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-slate-800 transition-all active:scale-95">
+                  <button onClick={() => setShowApproveModal(req)} className="flex-1 bg-slate-900 text-white py-4 rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-slate-800 transition-all active:scale-95 shadow-lg shadow-slate-100">
                     <UserCheck size={20} /> Approve
                   </button>
                   <button onClick={() => handleRejectRequester(req)} className="p-4 bg-red-50 text-red-600 rounded-2xl hover:bg-red-100 transition-all active:scale-95">
@@ -341,9 +359,12 @@ const App: React.FC = () => {
             ))}
             {requesters.length === 0 && (
               <div className="col-span-full py-24 text-center bg-white rounded-[40px] border-2 border-dashed border-slate-100">
-                <Sparkles className="text-slate-200 mx-auto mb-4" size={32} />
-                <p className="text-slate-400 font-bold text-lg">No pending approvals</p>
-                <p className="text-slate-400 text-xs mt-1">Rejected or approved users will never reappear here.</p>
+                <Sparkles className="text-slate-200 mx-auto mb-4" size={48} />
+                <p className="text-slate-400 font-black text-xl">Queue is Clear</p>
+                <p className="text-slate-400 text-sm mt-2 max-w-xs mx-auto">Strangers who message via WhatsApp will appear here for identification.</p>
+                <button onClick={handleManualRefresh} className="mt-6 text-blue-600 font-bold text-xs uppercase tracking-widest hover:underline flex items-center gap-2 mx-auto">
+                   <RefreshCw size={14} /> Scan for New Signals
+                </button>
               </div>
             )}
           </div>
@@ -378,9 +399,9 @@ const App: React.FC = () => {
       {showAddSR && (
         <div className="fixed inset-0 z-[1000] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4">
           <form onSubmit={async (e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); await handleAddItem('service_requests', { id: `SR-${Math.floor(1000 + Math.random() * 9000)}`, title: fd.get('title'), description: fd.get('description'), site_id: fd.get('site_id') || null, status: SRStatus.NEW, source: SRSource.WEB, created_at: new Date().toISOString() }, setSrs, () => setShowAddSR(false)); }} className="bg-white w-full max-w-lg rounded-[40px] p-10 shadow-2xl space-y-8 animate-in zoom-in duration-300">
-            <div className="flex justify-between items-center"><h3 className="text-3xl font-black text-slate-900">New Request</h3><button type="button" onClick={() => setShowAddSR(false)} className="p-2 bg-slate-100 rounded-full"><X size={24} /></button></div>
-            <div className="space-y-4"><input required name="title" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold border-2 border-transparent focus:border-blue-500" placeholder="Summary" /><textarea name="description" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-medium h-32 border-2 border-transparent focus:border-blue-500" placeholder="Details" /><select name="site_id" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold"><option value="">Select Facility</option>{sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
-            <button type="submit" disabled={isLoading} className="w-full bg-blue-600 text-white py-6 rounded-3xl font-black text-xl shadow-xl">{isLoading ? <Loader2 className="animate-spin mx-auto" /> : 'Log Ticket'}</button>
+            <div className="flex justify-between items-center"><h3 className="text-3xl font-black text-slate-900">New Request</h3><button type="button" onClick={() => setShowAddSR(false)} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200 transition-colors"><X size={24} /></button></div>
+            <div className="space-y-4"><input required name="title" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold border-2 border-transparent focus:border-blue-500" placeholder="Problem Summary" /><textarea name="description" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-medium h-32 border-2 border-transparent focus:border-blue-500" placeholder="Full Details" /><select name="site_id" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold"><option value="">Facility Context</option>{sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
+            <button type="submit" disabled={isLoading} className="w-full bg-blue-600 text-white py-6 rounded-3xl font-black text-xl shadow-xl shadow-blue-100">{isLoading ? <Loader2 className="animate-spin mx-auto" /> : 'Log Ticket'}</button>
           </form>
         </div>
       )}
@@ -388,9 +409,9 @@ const App: React.FC = () => {
       {showAddAsset && (
         <div className="fixed inset-0 z-[1000] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4">
           <form onSubmit={async (e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); await handleAddItem('assets', { name: fd.get('name'), type: fd.get('type'), code: `AST-${Math.floor(Math.random()*9000)}`, site_id: fd.get('site_id'), status: Status.ACTIVE }, setAssets, () => setShowAddAsset(false)); }} className="bg-white w-full max-w-lg rounded-[40px] p-10 shadow-2xl space-y-8 animate-in zoom-in duration-300">
-            <div className="flex justify-between items-center"><h3 className="text-3xl font-black text-slate-900">Add Asset</h3><button type="button" onClick={() => setShowAddAsset(false)} className="p-2 bg-slate-100 rounded-full"><X size={24} /></button></div>
-            <div className="space-y-4"><input required name="name" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold" placeholder="Asset Name" /><input name="type" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold" placeholder="Category" /><select required name="site_id" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold"><option value="">Site</option>{sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
-            <button type="submit" disabled={isLoading} className="w-full bg-slate-900 text-white py-6 rounded-3xl font-black">{isLoading ? <Loader2 className="animate-spin mx-auto" /> : 'Register Asset'}</button>
+            <div className="flex justify-between items-center"><h3 className="text-3xl font-black text-slate-900">Add Asset</h3><button type="button" onClick={() => setShowAddAsset(false)} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200"><X size={24} /></button></div>
+            <div className="space-y-4"><input required name="name" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold" placeholder="Asset Name" /><input name="type" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold" placeholder="Equipment Type" /><select required name="site_id" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold"><option value="">Assign Site</option>{sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
+            <button type="submit" disabled={isLoading} className="w-full bg-slate-900 text-white py-6 rounded-3xl font-black">{isLoading ? <Loader2 className="animate-spin mx-auto" /> : 'Save Asset'}</button>
           </form>
         </div>
       )}
@@ -398,9 +419,9 @@ const App: React.FC = () => {
       {showAddTenant && (
         <div className="fixed inset-0 z-[1000] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4">
           <form onSubmit={async (e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); await handleAddItem('tenants', { name: fd.get('name'), phone: fd.get('phone'), site_id: fd.get('site_id'), status: Status.ACTIVE }, setTenants, () => setShowAddTenant(false)); }} className="bg-white w-full max-w-lg rounded-[40px] p-10 shadow-2xl space-y-8 animate-in zoom-in duration-300">
-            <div className="flex justify-between items-center"><h3 className="text-3xl font-black text-slate-900">Add Resident</h3><button type="button" onClick={() => setShowAddTenant(false)} className="p-2 bg-slate-100 rounded-full"><X size={24} /></button></div>
-            <div className="space-y-4"><input required name="name" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold" placeholder="Full Name" /><input required name="phone" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold" placeholder="Mobile" /><select required name="site_id" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold"><option value="">Site</option>{sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
-            <button type="submit" disabled={isLoading} className="w-full bg-slate-900 text-white py-6 rounded-3xl font-black">Save</button>
+            <div className="flex justify-between items-center"><h3 className="text-3xl font-black text-slate-900">New Tenant</h3><button type="button" onClick={() => setShowAddTenant(false)} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200"><X size={24} /></button></div>
+            <div className="space-y-4"><input required name="name" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold" placeholder="Resident Name" /><input required name="phone" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold" placeholder="Mobile Number" /><select required name="site_id" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold"><option value="">Facility Site</option>{sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
+            <button type="submit" disabled={isLoading} className="w-full bg-slate-900 text-white py-6 rounded-3xl font-black">Register Resident</button>
           </form>
         </div>
       )}
@@ -408,9 +429,9 @@ const App: React.FC = () => {
       {showAddSite && (
         <div className="fixed inset-0 z-[1000] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4">
            <form onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); handleAddItem('sites', { name: fd.get('name'), location: fd.get('location'), code: `SITE-${Math.floor(1000+Math.random()*9000)}`, status: Status.ACTIVE }, setSites, () => setShowAddSite(false)); }} className="bg-white w-full max-w-md rounded-[48px] p-12 shadow-2xl space-y-8 animate-in zoom-in duration-300">
-              <div className="flex justify-between items-center"><h3 className="text-3xl font-black text-slate-900">New Site</h3><button type="button" onClick={() => setShowAddSite(false)} className="p-2 bg-slate-100 rounded-full"><X size={24} /></button></div>
-              <div className="space-y-4"><input required name="name" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold" placeholder="Name" /><input required name="location" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold" placeholder="Location" /></div>
-              <button type="submit" disabled={isLoading} className="w-full bg-slate-900 text-white py-6 rounded-3xl font-black">Create</button>
+              <div className="flex justify-between items-center"><h3 className="text-3xl font-black text-slate-900">New Site</h3><button type="button" onClick={() => setShowAddSite(false)} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200"><X size={24} /></button></div>
+              <div className="space-y-4"><input required name="name" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold border-2 border-transparent focus:border-blue-500" placeholder="Facility Name" /><input required name="location" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold border-2 border-transparent focus:border-blue-500" placeholder="Physical Address" /></div>
+              <button type="submit" disabled={isLoading} className="w-full bg-slate-900 text-white py-6 rounded-3xl font-black text-lg">Create Infrastructure</button>
            </form>
         </div>
       )}
@@ -418,9 +439,20 @@ const App: React.FC = () => {
       {showApproveModal && (
         <div className="fixed inset-0 z-[1000] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4">
           <form onSubmit={async (e) => { e.preventDefault(); await handleApproveTenant(showApproveModal, new FormData(e.currentTarget)); }} className="bg-white w-full max-w-lg rounded-[40px] p-10 shadow-2xl space-y-8 animate-in zoom-in duration-300">
-            <div className="flex justify-between items-center"><h3 className="text-3xl font-black text-slate-900">Activate Resident</h3><button type="button" onClick={() => setShowApproveModal(null)} className="p-2 bg-slate-100 rounded-full"><X size={24} /></button></div>
-            <div className="space-y-4"><div className="p-6 bg-blue-50 text-blue-700 rounded-2xl font-black flex items-center gap-4 text-lg"><Phone size={24} /> +{showApproveModal.phone}</div><input required name="name" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold" placeholder="Full Display Name" /><select required name="site_id" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold"><option value="">Facility Site...</option>{sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
-            <button type="submit" disabled={isLoading} className="w-full bg-emerald-600 text-white py-6 rounded-3xl font-black text-xl flex items-center justify-center gap-3 active:scale-95 shadow-xl shadow-emerald-100">Activate Account</button>
+            <div className="flex justify-between items-center"><h3 className="text-3xl font-black text-slate-900">Confirm Identity</h3><button type="button" onClick={() => setShowApproveModal(null)} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200"><X size={24} /></button></div>
+            <div className="space-y-4">
+              <div className="p-6 bg-blue-50 text-blue-700 rounded-2xl font-black flex items-center gap-4 text-lg border border-blue-100">
+                <Phone size={24} /> +{showApproveModal.phone}
+              </div>
+              <input required name="name" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold border-2 border-transparent focus:border-blue-500 transition-all" placeholder="Enter Full Name" />
+              <select required name="site_id" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold">
+                <option value="">Assign to Facility Site...</option>
+                {sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+            <button type="submit" disabled={isLoading} className="w-full bg-emerald-600 text-white py-6 rounded-3xl font-black text-xl flex items-center justify-center gap-3 active:scale-95 shadow-xl shadow-emerald-100 transition-all hover:bg-emerald-700">
+               {isLoading ? <Loader2 className="animate-spin" /> : 'Finalize Activation'}
+            </button>
           </form>
         </div>
       )}
