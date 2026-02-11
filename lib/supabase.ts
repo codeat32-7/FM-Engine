@@ -6,71 +6,6 @@ const supabaseAnonKey = process.env?.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsI
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-/**
- * 🛠 MASTER SCHEMA SETUP (Run this in Supabase SQL Editor):
- * 
- * -- 1. Organizations
- * CREATE TABLE IF NOT EXISTS organizations (
- *   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
- *   name TEXT NOT NULL,
- *   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
- * );
- * 
- * -- 2. Unified Profiles
- * CREATE TABLE IF NOT EXISTS profiles (
- *   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
- *   org_id UUID REFERENCES organizations(id),
- *   phone TEXT UNIQUE NOT NULL,
- *   full_name TEXT,
- *   role TEXT NOT NULL CHECK (role IN ('admin', 'tenant')),
- *   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
- * );
- * 
- * -- 3. Sites & Blocks
- * CREATE TABLE IF NOT EXISTS sites (
- *   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
- *   org_id UUID REFERENCES organizations(id),
- *   name TEXT NOT NULL,
- *   code TEXT,
- *   location TEXT,
- *   status TEXT DEFAULT 'ACTIVE',
- *   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
- * );
- * 
- * CREATE TABLE IF NOT EXISTS blocks (
- *   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
- *   org_id UUID REFERENCES organizations(id),
- *   site_id UUID REFERENCES sites(id),
- *   name TEXT NOT NULL,
- *   type TEXT,
- *   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
- * );
- * 
- * -- 4. Service Requests (Ticket System)
- * CREATE TABLE IF NOT EXISTS service_requests (
- *   id TEXT PRIMARY KEY,
- *   org_id UUID REFERENCES organizations(id),
- *   site_id UUID REFERENCES sites(id),
- *   asset_id UUID,
- *   block_id UUID,
- *   title TEXT NOT NULL,
- *   description TEXT,
- *   requester_phone TEXT,
- *   status TEXT DEFAULT 'New',
- *   source TEXT DEFAULT 'Web',
- *   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
- * );
- * 
- * -- 5. Requesters (Approval Queue)
- * CREATE TABLE IF NOT EXISTS requesters (
- *   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
- *   org_id UUID REFERENCES organizations(id),
- *   phone TEXT NOT NULL UNIQUE,
- *   status TEXT DEFAULT 'pending',
- *   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
- * );
- */
-
 export interface ConnectionStatus {
   connected: boolean;
   error?: string;
@@ -79,13 +14,19 @@ export interface ConnectionStatus {
 
 export const checkSchemaReady = async (): Promise<ConnectionStatus> => {
   try {
-    // Basic connectivity and table existence check
-    const { error: profErr } = await supabase.from('profiles').select('id').limit(1);
-    if (profErr && (profErr.code === 'PGRST204' || profErr.message.includes('does not exist'))) {
-      return { connected: false, needsSetup: true, error: "Missing 'profiles' table. Please check your Supabase schema." };
+    // 1. Check for organizations (Fundamental table)
+    const { error: orgErr } = await supabase.from('organizations').select('id').limit(1);
+    if (orgErr && (orgErr.code === 'PGRST204' || orgErr.message.includes('does not exist'))) {
+      return { connected: false, needsSetup: true, error: "Missing 'organizations' table." };
     }
 
-    // Check for requester_phone column specifically as it's often missed
+    // 2. Check for profiles
+    const { error: profErr } = await supabase.from('profiles').select('id').limit(1);
+    if (profErr) {
+       return { connected: false, needsSetup: true, error: "Profiles table not accessible." };
+    }
+
+    // 3. Check for service_requests (Check specifically for the column used by WhatsApp)
     const { error: srErr } = await supabase.from('service_requests').select('requester_phone').limit(1);
     if (srErr && (srErr.message.includes('column') || srErr.message.includes('does not exist'))) {
       return { connected: false, needsSetup: true, error: "Missing 'requester_phone' column in service_requests table." };
