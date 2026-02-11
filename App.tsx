@@ -23,6 +23,99 @@ const DEFAULT_TABS: TabConfig[] = [
   { id: 'assets', label: 'Assets', iconName: 'Package', isVisible: true },
 ];
 
+const Onboarding: React.FC<{ user: UserProfile, onComplete: (user: UserProfile) => void }> = ({ user, onComplete }) => {
+  const [step, setStep] = useState(1);
+  const [adminName, setAdminName] = useState('');
+  const [orgName, setOrgName] = useState('');
+  const [siteName, setSiteName] = useState('');
+  const [siteLocation, setSiteLocation] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSetup = async () => {
+    setLoading(true);
+    try {
+      const { data: org, error: orgErr } = await supabase.from('organizations').insert([{ name: orgName }]).select().single();
+      if (orgErr) throw orgErr;
+
+      const { error: siteErr } = await supabase.from('sites').insert([{
+        org_id: org.id,
+        name: siteName,
+        location: siteLocation,
+        code: `SITE-${Math.floor(1000 + Math.random() * 9000)}`,
+        status: Status.ACTIVE
+      }]);
+      if (siteErr) throw siteErr;
+
+      const { error: profErr } = await supabase.from('profiles').upsert({
+        id: user.id,
+        org_id: org.id,
+        phone: user.phone,
+        full_name: adminName,
+        role: 'admin'
+      }, { onConflict: 'id' });
+      
+      if (profErr) throw profErr;
+
+      const updatedUser: UserProfile = {
+        ...user,
+        full_name: adminName,
+        org_id: org.id,
+        onboarded: true,
+        role: 'admin'
+      };
+
+      localStorage.setItem('fm_engine_user', JSON.stringify(updatedUser));
+      onComplete(updatedUser);
+    } catch (err: any) {
+      alert("Setup failed: " + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6 text-slate-900">
+      <div className="max-w-md w-full bg-white rounded-[48px] p-12 shadow-2xl border border-slate-100 space-y-8 animate-in zoom-in duration-500 relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 rounded-full -mr-16 -mt-16" />
+        <div className="flex justify-between items-center relative z-10">
+          <div className="flex gap-2">
+            {[1, 2, 3].map(i => (
+              <div key={i} className={`h-1.5 w-8 rounded-full transition-all ${step >= i ? 'bg-blue-600' : 'bg-slate-100'}`} />
+            ))}
+          </div>
+          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Step {step} of 3</span>
+        </div>
+        {step === 1 && (
+          <div className="space-y-6 animate-in slide-in-from-right duration-300">
+            <h2 className="text-3xl font-black text-slate-900 leading-tight">Your Identity</h2>
+            <input autoFocus className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 focus:bg-white rounded-3xl p-6 outline-none font-bold text-lg" placeholder="Admin Full Name" value={adminName} onChange={e => setAdminName(e.target.value)} />
+            <button disabled={!adminName} onClick={() => setStep(2)} className="w-full bg-slate-900 text-white py-6 rounded-3xl font-black flex items-center justify-center gap-3 transition-all hover:bg-slate-800">Continue <ArrowRight /></button>
+          </div>
+        )}
+        {step === 2 && (
+          <div className="space-y-6 animate-in slide-in-from-right duration-300">
+            <h2 className="text-3xl font-black text-slate-900">Organization</h2>
+            <input autoFocus className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 focus:bg-white rounded-3xl p-6 outline-none font-bold text-lg" placeholder="e.g. Skyline Towers" value={orgName} onChange={e => setOrgName(e.target.value)} />
+            <button disabled={!orgName} onClick={() => setStep(3)} className="w-full bg-slate-900 text-white py-6 rounded-3xl font-black flex items-center justify-center gap-3 transition-all hover:bg-slate-800">Continue <ArrowRight /></button>
+          </div>
+        )}
+        {step === 3 && (
+          <div className="space-y-6 animate-in slide-in-from-right duration-300">
+            <h2 className="text-3xl font-black text-slate-900">Primary Site</h2>
+            <div className="space-y-4">
+              <input autoFocus className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 focus:bg-white rounded-3xl p-5 outline-none font-bold text-slate-800" placeholder="Site Name" value={siteName} onChange={e => setSiteName(e.target.value)} />
+              <input className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 focus:bg-white rounded-3xl p-5 outline-none font-bold text-slate-800" placeholder="Location" value={siteLocation} onChange={e => setSiteLocation(e.target.value)} />
+            </div>
+            <button disabled={loading || !siteName || !siteLocation} onClick={handleSetup} className="w-full bg-blue-600 text-white py-6 rounded-3xl font-black flex items-center justify-center gap-3 transition-all hover:bg-blue-700">
+              {loading ? <Loader2 className="animate-spin" /> : <>Complete Setup <Rocket /></>}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
@@ -91,7 +184,6 @@ const App: React.FC = () => {
     if (!currentUser?.org_id || syncLock.current) return;
     syncLock.current = true;
     try {
-      // 1. Find all SRs without a matched profile but belonging to this org context
       const { data: orphans } = await supabase
         .from('service_requests')
         .select('requester_phone')
@@ -102,7 +194,6 @@ const App: React.FC = () => {
 
       const phones = [...new Set(orphans.map(o => o.requester_phone).filter(Boolean))];
 
-      // 2. Filter out already known tenants/requesters
       const [knownTens, knownReqs] = await Promise.all([
         supabase.from('tenants').select('phone').in('phone', phones),
         supabase.from('requesters').select('phone').in('phone', phones)
@@ -118,7 +209,6 @@ const App: React.FC = () => {
         );
       }
 
-      // Refresh local state
       const { data: freshReqs } = await supabase.from('requesters').select('*').eq('org_id', currentUser.org_id).eq('status', 'pending');
       if (freshReqs) setRequesters(freshReqs);
     } finally {
@@ -126,7 +216,6 @@ const App: React.FC = () => {
     }
   }, [currentUser?.org_id]);
 
-  // REALTIME SETUP
   useEffect(() => {
     if (!currentUser?.org_id) return;
 
@@ -192,7 +281,6 @@ const App: React.FC = () => {
       const name = formData.get('name') as string;
       const siteId = formData.get('site_id') as string;
 
-      // 1. Profile Creation
       const { data: profile, error: profErr } = await supabase.from('profiles').insert([{
         phone: requester.phone,
         org_id: currentUser?.org_id,
@@ -201,7 +289,6 @@ const App: React.FC = () => {
       }]).select().single();
       if (profErr) throw profErr;
 
-      // 2. Tenant Record
       const { data: tenant, error: tenantErr } = await supabase.from('tenants').insert([{
         org_id: currentUser?.org_id,
         site_id: siteId,
@@ -212,7 +299,6 @@ const App: React.FC = () => {
       }]).select().single();
       if (tenantErr) throw tenantErr;
 
-      // 3. Mark approved
       await supabase.from('requesters').update({ status: 'approved' }).eq('id', requester.id);
 
       setTenants(prev => [tenant, ...prev]);
@@ -223,6 +309,7 @@ const App: React.FC = () => {
   };
 
   if (!currentUser) return <Auth onSignIn={(u) => { localStorage.setItem('fm_engine_user', JSON.stringify(u)); setCurrentUser(u); }} />;
+  if (!currentUser.org_id && currentUser.role === 'admin') return <Onboarding user={currentUser} onComplete={setCurrentUser} />;
   if (currentUser.role === 'tenant') return <TenantPortal user={currentUser} onLogout={() => { localStorage.removeItem('fm_engine_user'); setCurrentUser(null); }} />;
 
   const pendingApprovalsCount = requesters.length;
@@ -244,7 +331,7 @@ const App: React.FC = () => {
           <div className="flex justify-between items-end">
             <div>
               <h2 className="text-3xl font-black text-slate-900">Approvals</h2>
-              <p className="text-slate-500 font-medium">Unknown residents requesting facility access.</p>
+              <p className="text-slate-500 font-medium text-sm">Unknown residents requesting facility access.</p>
             </div>
             <button 
               onClick={() => { setIsLoading(true); syncOrphanedRequesters().finally(() => setIsLoading(false)); }} 
@@ -303,7 +390,6 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* MODALS */}
       {showAddSR && (
         <div className="fixed inset-0 z-[1000] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4">
           <form onSubmit={async (e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); await handleAddItem('service_requests', { id: `SR-${Math.floor(10000 + Math.random() * 90000)}`, title: fd.get('title'), description: fd.get('description'), site_id: fd.get('site_id') || null, status: SRStatus.NEW, source: SRSource.WEB, created_at: new Date().toISOString() }, setSrs, () => setShowAddSR(false)); }} className="bg-white w-full max-w-lg rounded-[40px] p-10 shadow-2xl space-y-8 animate-in zoom-in duration-300">
