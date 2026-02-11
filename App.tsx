@@ -48,7 +48,8 @@ const Onboarding: React.FC<{ user: UserProfile, onComplete: (user: UserProfile) 
       }]);
       if (siteErr) throw siteErr;
 
-      // 3. Update/Create Profile
+      // 3. Update/Create Profile with the new Org ID
+      // This is the critical link for WhatsApp to find the right Org
       const { data: profile, error: profErr } = await supabase.from('profiles').upsert({
         id: user.id,
         org_id: org.id,
@@ -56,8 +57,10 @@ const Onboarding: React.FC<{ user: UserProfile, onComplete: (user: UserProfile) 
         full_name: adminName,
         role: 'admin'
       }, { onConflict: 'id' }).select().single();
+      
       if (profErr) throw profErr;
 
+      // 4. Signal completion with full data
       onComplete({
         ...user,
         full_name: adminName,
@@ -65,7 +68,7 @@ const Onboarding: React.FC<{ user: UserProfile, onComplete: (user: UserProfile) 
         onboarded: true
       });
     } catch (err: any) {
-      alert(err.message);
+      alert("Setup failed: " + err.message);
     } finally {
       setLoading(false);
     }
@@ -173,6 +176,15 @@ const App: React.FC = () => {
     return saved ? JSON.parse(saved) : null;
   });
   
+  // Persistence Sync Hook: Crucial to prevent onboarding loop on refresh
+  useEffect(() => {
+    if (currentUser) {
+      localStorage.setItem('fm_engine_user', JSON.stringify(currentUser));
+    } else {
+      localStorage.removeItem('fm_engine_user');
+    }
+  }, [currentUser]);
+
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [sites, setSites] = useState<Site[]>([]);
   const [blocks, setBlocks] = useState<Block[]>([]);
@@ -301,14 +313,11 @@ const App: React.FC = () => {
   }, [currentUser?.id, currentUser?.onboarded, currentUser?.org_id, fetchOrgData, setupRealtime]);
 
   const handleSignIn = async (user: UserProfile) => {
-    localStorage.setItem('fm_engine_user', JSON.stringify(user));
     setCurrentUser(user);
-    // Explicitly reset UI to dashboard when switching contexts
     setActiveTab('dashboard');
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('fm_engine_user');
     setCurrentUser(null);
     setOrganization(null);
   };
@@ -519,7 +528,7 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Add Modals (Omitted for brevity, kept from original logic) */}
+      {/* Add Modals */}
       {showAddSite && (
         <div className="fixed inset-0 z-[1000] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4">
            <form onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); handleAddItem('sites', { name: fd.get('name'), location: fd.get('location'), code: `SITE-${Math.floor(1000+Math.random()*9000)}`, status: Status.ACTIVE }, setSites, () => setShowAddSite(false)); }} className="bg-white w-full max-w-md rounded-[48px] p-12 shadow-2xl space-y-8 animate-in zoom-in duration-300">
