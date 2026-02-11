@@ -11,7 +11,7 @@ import TenantPortal from './components/TenantPortal';
 import { Site, Asset, ServiceRequest, SRStatus, Status, SRSource, TabConfig, UserProfile, Tenant, BlockType, Block, Organization, Requester } from './types';
 import { supabase, checkSchemaReady } from './lib/supabase';
 import { 
-  X, MapPin, Plus, Loader2, Wrench, ArrowRight, Layers, CheckCircle, Building, AlertCircle, RefreshCw, Phone, User, Package, UserCheck, Terminal, Rocket
+  X, MapPin, Plus, Loader2, Wrench, ArrowRight, Layers, CheckCircle, Building, AlertCircle, RefreshCw, Phone, User, Package, UserCheck, Terminal, Rocket, Sparkles
 } from 'lucide-react';
 
 const DEFAULT_TABS: TabConfig[] = [
@@ -32,11 +32,9 @@ const Onboarding: React.FC<{ user: UserProfile, onComplete: (org: Organization) 
     if (!name) return;
     setLoading(true);
     try {
-      // 1. Create Org
       const { data: org, error: orgErr } = await supabase.from('organizations').insert([{ name }]).select().single();
       if (orgErr) throw orgErr;
 
-      // 2. Create/Update Profile
       const { error: profErr } = await supabase.from('profiles').upsert({
         id: user.id,
         org_id: org.id,
@@ -136,8 +134,14 @@ const App: React.FC = () => {
     if (!currentUser?.org_id) return;
     setIsLoading(true);
     try {
-      const { data: orgData } = await supabase.from('organizations').select('*').eq('id', currentUser.org_id).single();
-      if (orgData) setOrganization(orgData);
+      const { data: orgData, error: orgErr } = await supabase.from('organizations').select('*').eq('id', currentUser.org_id).single();
+      if (!orgData || orgErr) {
+        setCurrentUser(prev => prev ? { ...prev, onboarded: false, org_id: null } : null);
+        setOrganization(null);
+        setDbStatus('connected');
+        return;
+      }
+      setOrganization(orgData);
 
       const [siteData, assetData, tenantData, srData, reqData] = await Promise.all([
         supabase.from('sites').select('*').eq('org_id', currentUser.org_id),
@@ -165,6 +169,36 @@ const App: React.FC = () => {
     }
     finally { setIsLoading(false); }
   }, [currentUser?.org_id, fetchBlocks]);
+
+  // SELF-HEALING: Auto-sync requesters from orphaned tickets
+  const syncOrphanedRequesters = useCallback(async () => {
+    if (!currentUser?.org_id || srs.length === 0) return;
+    
+    // 1. Find unique phones in SRs that are NOT yet tenants
+    const srPhones = [...new Set(srs.map(sr => sr.requester_phone).filter(Boolean))];
+    const tenantPhones = new Set(tenants.map(t => t.phone));
+    const reqPhones = new Set(requesters.map(r => r.phone));
+
+    const orphans = srPhones.filter(p => p && !tenantPhones.has(p) && !reqPhones.has(p));
+    
+    if (orphans.length > 0) {
+      console.log(`Self-healing: Creating ${orphans.length} missing requester records...`);
+      const inserts = orphans.map(p => ({
+        phone: p,
+        org_id: currentUser.org_id,
+        status: 'pending'
+      }));
+      await supabase.from('requesters').upsert(inserts, { onConflict: 'phone' });
+      fetchOrgData(); // Refresh to show the new ones
+    }
+  }, [srs, tenants, requesters, currentUser?.org_id, fetchOrgData]);
+
+  // Run self-healing when Approvals tab is active
+  useEffect(() => {
+    if (activeTab === 'requesters') {
+      syncOrphanedRequesters();
+    }
+  }, [activeTab, syncOrphanedRequesters]);
 
   const setupRealtime = useCallback(() => {
     if (!currentUser?.org_id) return () => {};
@@ -195,7 +229,6 @@ const App: React.FC = () => {
 
   useEffect(() => {
     let cleanup: (() => void) | undefined;
-
     const init = async () => {
       const status = await checkSchemaReady();
       if (status.needsSetup) {
@@ -203,7 +236,6 @@ const App: React.FC = () => {
         setSetupMessage(status.error || "Database requires updates.");
         return;
       }
-      
       if (currentUser && currentUser.onboarded) {
         fetchOrgData();
         cleanup = setupRealtime();
@@ -211,11 +243,8 @@ const App: React.FC = () => {
         setDbStatus('connected');
       }
     };
-
     init();
-    return () => {
-      if (cleanup) cleanup();
-    };
+    return () => { if (cleanup) cleanup(); };
   }, [currentUser?.id, currentUser?.onboarded, fetchOrgData, setupRealtime]);
 
   const handleSignIn = async (user: UserProfile) => {
@@ -226,6 +255,7 @@ const App: React.FC = () => {
   const handleLogout = () => {
     localStorage.removeItem('fm_engine_user');
     setCurrentUser(null);
+    setOrganization(null);
   };
 
   const handleOnboardingComplete = (org: Organization) => {
@@ -252,7 +282,6 @@ const App: React.FC = () => {
       if (tErr) throw tErr;
 
       await supabase.from('requesters').update({ status: 'approved' }).eq('id', requester.id);
-      
       await supabase.from('service_requests')
         .update({ site_id: tenantData.site_id, block_id: tenantData.block_id })
         .eq('requester_phone', requester.phone);
@@ -303,8 +332,9 @@ const App: React.FC = () => {
   if (!currentUser) return <Auth onSignIn={handleSignIn} />;
   if (currentUser.role === 'tenant') return <TenantPortal user={currentUser} onLogout={handleLogout} />;
   
-  // New Onboarding Logic
-  if (!currentUser.onboarded) return <Onboarding user={currentUser} onComplete={handleOnboardingComplete} />;
+  if (!currentUser.onboarded || (currentUser.onboarded && !organization && dbStatus === 'connected' && !isLoading)) {
+     return <Onboarding user={currentUser} onComplete={handleOnboardingComplete} />;
+  }
 
   return (
     <Layout 
@@ -341,8 +371,16 @@ const App: React.FC = () => {
       )}
       {activeTab === 'requesters' && (
         <div className="space-y-6 animate-in fade-in duration-500">
-           <h2 className="text-3xl font-black text-slate-900">Pending Approvals</h2>
-           <p className="text-slate-500 font-medium -mt-4">Mobile numbers waiting to be assigned to units.</p>
+           <div className="flex justify-between items-start">
+              <div>
+                <h2 className="text-3xl font-black text-slate-900">Approvals</h2>
+                <p className="text-slate-500 font-medium">New users waiting to be assigned to units.</p>
+              </div>
+              <div className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-600 rounded-full border border-emerald-100 animate-pulse">
+                <Sparkles size={14} />
+                <span className="text-[10px] font-black uppercase tracking-widest">Auto-Syncing</span>
+              </div>
+           </div>
            <div className="grid md:grid-cols-2 gap-6">
               {requesters.map(req => (
                 <div key={req.id} className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm flex flex-col justify-between hover:border-blue-200 transition-all">
@@ -353,13 +391,18 @@ const App: React.FC = () => {
                    <div className="space-y-4">
                       <div className="bg-slate-50 p-4 rounded-2xl">
                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Recent Activity</p>
-                         <p className="text-sm font-bold text-slate-700">{srs.find(s => s.requester_phone === req.phone)?.title || 'No tickets yet'}</p>
+                         <p className="text-sm font-bold text-slate-700">{srs.find(s => s.requester_phone === req.phone)?.title || 'Awaiting first request'}</p>
                       </div>
-                      <button onClick={() => setShowApproveModal(req)} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-slate-800"><UserCheck size={20} /> Convert to Tenant</button>
+                      <button onClick={() => setShowApproveModal(req)} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-slate-800 transition-all active:scale-[0.98]"><UserCheck size={20} /> Approve Resident</button>
                    </div>
                 </div>
               ))}
-              {requesters.length === 0 && <div className="col-span-full py-20 text-center bg-white rounded-[40px] border-2 border-dashed border-slate-100"><p className="text-slate-400 font-bold">No pending numbers to approve.</p></div>}
+              {requesters.length === 0 && (
+                <div className="col-span-full py-20 text-center bg-white rounded-[40px] border-2 border-dashed border-slate-100">
+                  <p className="text-slate-400 font-bold mb-2">No pending approvals.</p>
+                  <p className="text-xs text-slate-300 font-medium">New requests from unrecognized numbers will appear here instantly.</p>
+                </div>
+              )}
            </div>
         </div>
       )}
@@ -373,7 +416,7 @@ const App: React.FC = () => {
         <div className="space-y-8 pb-20">
            <div className="flex justify-between items-end">
              <div><h2 className="text-3xl font-black text-slate-900">Sites</h2><p className="text-slate-500 font-medium">Facility portfolio</p></div>
-             <button onClick={() => setShowAddSite(true)} className="bg-slate-900 text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 active:scale-95"><Plus size={20} /> Add Site</button>
+             <button onClick={() => setShowAddSite(true)} className="bg-slate-900 text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 active:scale-95 transition-all"><Plus size={20} /> Add Site</button>
            </div>
            <div className="grid md:grid-cols-2 gap-8">
              {sites.map(site => (
