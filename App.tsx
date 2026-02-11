@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Layout from './components/Layout';
 import Dashboard from './components/Dashboard';
 import SRList from './components/SRList';
@@ -23,99 +23,6 @@ const DEFAULT_TABS: TabConfig[] = [
   { id: 'assets', label: 'Assets', iconName: 'Package', isVisible: true },
 ];
 
-const Onboarding: React.FC<{ user: UserProfile, onComplete: (user: UserProfile) => void }> = ({ user, onComplete }) => {
-  const [step, setStep] = useState(1);
-  const [adminName, setAdminName] = useState('');
-  const [orgName, setOrgName] = useState('');
-  const [siteName, setSiteName] = useState('');
-  const [siteLocation, setSiteLocation] = useState('');
-  const [loading, setLoading] = useState(false);
-
-  const handleSetup = async () => {
-    setLoading(true);
-    try {
-      const { data: org, error: orgErr } = await supabase.from('organizations').insert([{ name: orgName }]).select().single();
-      if (orgErr) throw orgErr;
-
-      const { error: siteErr } = await supabase.from('sites').insert([{
-        org_id: org.id,
-        name: siteName,
-        location: siteLocation,
-        code: `SITE-${Math.floor(1000 + Math.random() * 9000)}`,
-        status: Status.ACTIVE
-      }]);
-      if (siteErr) throw siteErr;
-
-      const { error: profErr } = await supabase.from('profiles').upsert({
-        id: user.id,
-        org_id: org.id,
-        phone: user.phone,
-        full_name: adminName,
-        role: 'admin'
-      }, { onConflict: 'id' });
-      
-      if (profErr) throw profErr;
-
-      const updatedUser: UserProfile = {
-        ...user,
-        full_name: adminName,
-        org_id: org.id,
-        onboarded: true,
-        role: 'admin'
-      };
-
-      localStorage.setItem('fm_engine_user', JSON.stringify(updatedUser));
-      onComplete(updatedUser);
-    } catch (err: any) {
-      alert("Setup failed: " + err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6 text-slate-900">
-      <div className="max-w-md w-full bg-white rounded-[48px] p-12 shadow-2xl border border-slate-100 space-y-8 animate-in zoom-in duration-500 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 rounded-full -mr-16 -mt-16" />
-        <div className="flex justify-between items-center relative z-10">
-          <div className="flex gap-2">
-            {[1, 2, 3].map(i => (
-              <div key={i} className={`h-1.5 w-8 rounded-full transition-all ${step >= i ? 'bg-blue-600' : 'bg-slate-100'}`} />
-            ))}
-          </div>
-          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Step {step} of 3</span>
-        </div>
-        {step === 1 && (
-          <div className="space-y-6 animate-in slide-in-from-right duration-300">
-            <h2 className="text-3xl font-black text-slate-900 leading-tight">Your Identity</h2>
-            <input autoFocus className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 focus:bg-white rounded-3xl p-6 outline-none font-bold text-lg" placeholder="Admin Full Name" value={adminName} onChange={e => setAdminName(e.target.value)} />
-            <button disabled={!adminName} onClick={() => setStep(2)} className="w-full bg-slate-900 text-white py-6 rounded-3xl font-black flex items-center justify-center gap-3 transition-all hover:bg-slate-800">Continue <ArrowRight /></button>
-          </div>
-        )}
-        {step === 2 && (
-          <div className="space-y-6 animate-in slide-in-from-right duration-300">
-            <h2 className="text-3xl font-black text-slate-900">Organization</h2>
-            <input autoFocus className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 focus:bg-white rounded-3xl p-6 outline-none font-bold text-lg" placeholder="e.g. Skyline Towers" value={orgName} onChange={e => setOrgName(e.target.value)} />
-            <button disabled={!orgName} onClick={() => setStep(3)} className="w-full bg-slate-900 text-white py-6 rounded-3xl font-black flex items-center justify-center gap-3 transition-all hover:bg-slate-800">Continue <ArrowRight /></button>
-          </div>
-        )}
-        {step === 3 && (
-          <div className="space-y-6 animate-in slide-in-from-right duration-300">
-            <h2 className="text-3xl font-black text-slate-900">Primary Site</h2>
-            <div className="space-y-4">
-              <input autoFocus className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 focus:bg-white rounded-3xl p-5 outline-none font-bold text-slate-800" placeholder="Site Name" value={siteName} onChange={e => setSiteName(e.target.value)} />
-              <input className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 focus:bg-white rounded-3xl p-5 outline-none font-bold text-slate-800" placeholder="Location" value={siteLocation} onChange={e => setSiteLocation(e.target.value)} />
-            </div>
-            <button disabled={loading || !siteName || !siteLocation} onClick={handleSetup} className="w-full bg-blue-600 text-white py-6 rounded-3xl font-black flex items-center justify-center gap-3 transition-all hover:bg-blue-700">
-              {loading ? <Loader2 className="animate-spin" /> : <>Complete Setup <Rocket /></>}
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
@@ -132,7 +39,8 @@ const App: React.FC = () => {
   const [srs, setSrs] = useState<ServiceRequest[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [dbStatus, setDbStatus] = useState<'connecting' | 'connected' | 'error' | 'needs_setup'>('connecting');
-  
+  const syncLock = useRef(false);
+
   const [tabConfigs, setTabConfigs] = useState<TabConfig[]>(() => {
     const saved = localStorage.getItem('fm_tabs');
     if (!saved) return DEFAULT_TABS;
@@ -152,12 +60,6 @@ const App: React.FC = () => {
   const [showAddSite, setShowAddSite] = useState(false);
   const [showAddSR, setShowAddSR] = useState(false);
   const [showApproveModal, setShowApproveModal] = useState<Requester | null>(null);
-
-  const fetchBlocks = useCallback(async (siteIds: string[]) => {
-    if (siteIds.length === 0) return;
-    const { data } = await supabase.from('blocks').select('*').in('site_id', siteIds);
-    if (data) setBlocks(data);
-  }, []);
 
   const fetchOrgData = useCallback(async (silent: boolean = false) => {
     if (!currentUser?.org_id) return;
@@ -179,87 +81,83 @@ const App: React.FC = () => {
       setTenants(tenantData.data || []);
       setRequesters(reqData.data || []);
       setSrs((srData.data || []).sort((a,b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
-
-      if (siteData.data && siteData.data.length > 0) {
-        await fetchBlocks(siteData.data.map(s => s.id));
-      }
       setDbStatus('connected');
     } catch (err: any) { 
       setDbStatus('error');
     } finally { if (!silent) setIsLoading(false); }
-  }, [currentUser?.org_id, fetchBlocks]);
-
-  const syncOrphanedRequesters = useCallback(async () => {
-    if (!currentUser?.org_id) return;
-    
-    const { data: whatsappSRs } = await supabase
-      .from('service_requests')
-      .select('requester_phone, org_id')
-      .eq('source', 'WhatsApp');
-      
-    if (!whatsappSRs) return;
-
-    const relevantPhones = [...new Set(whatsappSRs
-      .filter(sr => !sr.org_id || sr.org_id === currentUser.org_id)
-      .map(sr => sr.requester_phone)
-      .filter(Boolean)
-    )];
-
-    if (relevantPhones.length === 0) return;
-
-    const [existingReqs, existingTens] = await Promise.all([
-      supabase.from('requesters').select('phone').in('phone', relevantPhones),
-      supabase.from('tenants').select('phone').in('phone', relevantPhones)
-    ]);
-
-    const loggedPhones = new Set(existingReqs.data?.map(r => r.phone) || []);
-    const registeredPhones = new Set(existingTens.data?.map(t => t.phone) || []);
-    
-    const trulyUnknown = relevantPhones.filter(p => !loggedPhones.has(p) && !registeredPhones.has(p));
-
-    if (trulyUnknown.length > 0) {
-      const inserts = trulyUnknown.map(p => ({ 
-        phone: p, 
-        org_id: currentUser.org_id, 
-        status: 'pending' 
-      }));
-      await supabase.from('requesters').upsert(inserts, { onConflict: 'phone' });
-    }
-    
-    const { data: finalReqs } = await supabase
-      .from('requesters')
-      .select('*')
-      .eq('org_id', currentUser.org_id)
-      .eq('status', 'pending');
-    
-    if (finalReqs) setRequesters(finalReqs);
   }, [currentUser?.org_id]);
 
-  // REALTIME SUBSCRIPTION
+  const syncOrphanedRequesters = useCallback(async () => {
+    if (!currentUser?.org_id || syncLock.current) return;
+    syncLock.current = true;
+    try {
+      // 1. Find all SRs without a matched profile but belonging to this org context
+      const { data: orphans } = await supabase
+        .from('service_requests')
+        .select('requester_phone')
+        .eq('org_id', currentUser.org_id)
+        .eq('source', 'WhatsApp');
+
+      if (!orphans || orphans.length === 0) return;
+
+      const phones = [...new Set(orphans.map(o => o.requester_phone).filter(Boolean))];
+
+      // 2. Filter out already known tenants/requesters
+      const [knownTens, knownReqs] = await Promise.all([
+        supabase.from('tenants').select('phone').in('phone', phones),
+        supabase.from('requesters').select('phone').in('phone', phones)
+      ]);
+
+      const logged = new Set([...(knownTens.data?.map(t => t.phone) || []), ...(knownReqs.data?.map(r => r.phone) || [])]);
+      const missing = phones.filter(p => !logged.has(p));
+
+      if (missing.length > 0) {
+        await supabase.from('requesters').upsert(
+          missing.map(p => ({ phone: p, org_id: currentUser.org_id, status: 'pending' })),
+          { onConflict: 'phone' }
+        );
+      }
+
+      // Refresh local state
+      const { data: freshReqs } = await supabase.from('requesters').select('*').eq('org_id', currentUser.org_id).eq('status', 'pending');
+      if (freshReqs) setRequesters(freshReqs);
+    } finally {
+      syncLock.current = false;
+    }
+  }, [currentUser?.org_id]);
+
+  // REALTIME SETUP
   useEffect(() => {
     if (!currentUser?.org_id) return;
 
     const channel = supabase
-      .channel('schema-db-changes')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'service_requests' }, (payload) => {
-        const newSR = payload.new as ServiceRequest;
-        if (!newSR.org_id || newSR.org_id === currentUser.org_id) {
-          setSrs(prev => [newSR, ...prev].sort((a,b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
-          // If it's a WhatsApp SR, we might need a new Approval entry
-          if (newSR.source === 'WhatsApp') {
-            syncOrphanedRequesters();
+      .channel(`public-db-${currentUser.org_id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'service_requests' }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          const newSR = payload.new as ServiceRequest;
+          if (newSR.org_id === currentUser.org_id) {
+            setSrs(prev => [newSR, ...prev].sort((a,b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
+            if (newSR.source === 'WhatsApp') syncOrphanedRequesters();
+          }
+        } else if (payload.eventType === 'UPDATE') {
+          const updated = payload.new as ServiceRequest;
+          setSrs(prev => prev.map(sr => sr.id === updated.id ? updated : sr));
+        }
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'requesters' }, (payload) => {
+        if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+          const req = payload.new as Requester;
+          if (req.org_id === currentUser.org_id) {
+            if (req.status === 'pending') {
+              setRequesters(prev => {
+                const filtered = prev.filter(r => r.id !== req.id);
+                return [req, ...filtered];
+              });
+            } else {
+              setRequesters(prev => prev.filter(r => r.id !== req.id));
+            }
           }
         }
-      })
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'requesters' }, (payload) => {
-        const newReq = payload.new as Requester;
-        if (newReq.org_id === currentUser.org_id && newReq.status === 'pending') {
-          setRequesters(prev => [newReq, ...prev]);
-        }
-      })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'service_requests' }, (payload) => {
-        const updatedSR = payload.new as ServiceRequest;
-        setSrs(prev => prev.map(sr => sr.id === updatedSR.id ? updatedSR : sr));
       })
       .subscribe();
 
@@ -275,31 +173,12 @@ const App: React.FC = () => {
     }
   }, [currentUser?.org_id, fetchOrgData, syncOrphanedRequesters]);
 
-  const handleManualRefresh = async () => {
-    setIsLoading(true);
-    await syncOrphanedRequesters();
-    await fetchOrgData(true);
-    setIsLoading(false);
-  };
-
-  const handleSignIn = (user: UserProfile) => {
-    localStorage.setItem('fm_engine_user', JSON.stringify(user));
-    setCurrentUser(user);
-    setActiveTab('dashboard');
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem('fm_engine_user');
-    setCurrentUser(null);
-  };
-
   const handleAddItem = async (table: string, payload: any, setter: Function, closeFn: Function) => {
     setIsLoading(true);
     try {
       const { data, error } = await supabase.from(table).insert([{ ...payload, org_id: currentUser?.org_id }]).select();
       if (error) throw error;
       if (data) { 
-        // Realtime will handle the list update, but we call setter to be safe for non-realtime fallback
         setter((prev: any) => [data[0], ...prev]); 
         closeFn(); 
       }
@@ -313,6 +192,7 @@ const App: React.FC = () => {
       const name = formData.get('name') as string;
       const siteId = formData.get('site_id') as string;
 
+      // 1. Profile Creation
       const { data: profile, error: profErr } = await supabase.from('profiles').insert([{
         phone: requester.phone,
         org_id: currentUser?.org_id,
@@ -321,6 +201,7 @@ const App: React.FC = () => {
       }]).select().single();
       if (profErr) throw profErr;
 
+      // 2. Tenant Record
       const { data: tenant, error: tenantErr } = await supabase.from('tenants').insert([{
         org_id: currentUser?.org_id,
         site_id: siteId,
@@ -331,6 +212,7 @@ const App: React.FC = () => {
       }]).select().single();
       if (tenantErr) throw tenantErr;
 
+      // 3. Mark approved
       await supabase.from('requesters').update({ status: 'approved' }).eq('id', requester.id);
 
       setTenants(prev => [tenant, ...prev]);
@@ -340,19 +222,8 @@ const App: React.FC = () => {
     finally { setIsLoading(false); }
   };
 
-  const handleRejectRequester = async (requester: Requester) => {
-    if (!confirm(`Reject +${requester.phone}? They will be removed permanently.`)) return;
-    setIsLoading(true);
-    try {
-      await supabase.from('requesters').update({ status: 'rejected' }).eq('id', requester.id);
-      setRequesters(prev => prev.filter(r => r.id !== requester.id));
-    } catch (err: any) { alert("Action failed: " + err.message); }
-    finally { setIsLoading(false); }
-  };
-
-  if (!currentUser) return <Auth onSignIn={handleSignIn} />;
-  if (!currentUser.org_id && currentUser.role === 'admin') return <Onboarding user={currentUser} onComplete={setCurrentUser} />;
-  if (currentUser.role === 'tenant') return <TenantPortal user={currentUser} onLogout={handleLogout} />;
+  if (!currentUser) return <Auth onSignIn={(u) => { localStorage.setItem('fm_engine_user', JSON.stringify(u)); setCurrentUser(u); }} />;
+  if (currentUser.role === 'tenant') return <TenantPortal user={currentUser} onLogout={() => { localStorage.removeItem('fm_engine_user'); setCurrentUser(null); }} />;
 
   const pendingApprovalsCount = requesters.length;
 
@@ -373,12 +244,12 @@ const App: React.FC = () => {
           <div className="flex justify-between items-end">
             <div>
               <h2 className="text-3xl font-black text-slate-900">Approvals</h2>
-              <p className="text-slate-500 font-medium">Strangers messaging via WhatsApp.</p>
+              <p className="text-slate-500 font-medium">Unknown residents requesting facility access.</p>
             </div>
             <button 
-              onClick={handleManualRefresh} 
+              onClick={() => { setIsLoading(true); syncOrphanedRequesters().finally(() => setIsLoading(false)); }} 
               disabled={isLoading}
-              className="p-3 bg-white border border-slate-100 rounded-2xl text-slate-400 hover:text-blue-600 hover:border-blue-100 transition-all active:scale-90 shadow-sm"
+              className="p-3 bg-white border border-slate-100 rounded-2xl text-slate-400 hover:text-blue-600 shadow-sm active:scale-90 transition-all"
             >
               <RefreshCw size={20} className={isLoading ? 'animate-spin' : ''} />
             </button>
@@ -389,28 +260,23 @@ const App: React.FC = () => {
                 <div className="flex items-center gap-4 mb-6">
                   <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center relative">
                     <Phone size={24} />
-                    <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 border-2 border-white rounded-full"></div>
+                    <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 border-2 border-white rounded-full animate-pulse"></div>
                   </div>
                   <div>
-                    <p className="text-lg font-black text-slate-900">+{req.phone}</p>
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Incoming ID Request</p>
+                    <p className="text-lg font-black text-slate-900 leading-none">+{req.phone}</p>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Pending Approval</p>
                   </div>
                 </div>
-                <div className="flex gap-3">
-                  <button onClick={() => setShowApproveModal(req)} className="flex-1 bg-slate-900 text-white py-4 rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-slate-800 transition-all active:scale-95 shadow-lg shadow-slate-100">
-                    <UserCheck size={20} /> Approve User
-                  </button>
-                  <button onClick={() => handleRejectRequester(req)} className="p-4 bg-red-50 text-red-600 rounded-2xl hover:bg-red-100 transition-all active:scale-95">
-                    <UserMinus size={20} />
-                  </button>
-                </div>
+                <button onClick={() => setShowApproveModal(req)} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-slate-800 transition-all active:scale-95 shadow-lg shadow-slate-100">
+                  <UserCheck size={20} /> Identity & Activate
+                </button>
               </div>
             ))}
             {requesters.length === 0 && (
               <div className="col-span-full py-24 text-center bg-white rounded-[40px] border-2 border-dashed border-slate-100">
                 <Sparkles className="text-slate-200 mx-auto mb-4" size={48} />
-                <p className="text-slate-400 font-black text-xl">No pending approvals</p>
-                <p className="text-slate-400 text-sm mt-2 max-w-xs mx-auto">New WhatsApp users will appear here live when they message.</p>
+                <p className="text-slate-400 font-black text-xl">Approval queue clear</p>
+                <p className="text-slate-400 text-sm mt-2 max-w-xs mx-auto">New WhatsApp users will appear here live when they send a request.</p>
               </div>
             )}
           </div>
@@ -418,11 +284,11 @@ const App: React.FC = () => {
       )}
 
       {activeTab === 'assets' && <AssetList assets={assets} sites={sites} blocks={blocks} onAdd={() => {}} />}
-      {activeTab === 'settings' && <Settings configs={tabConfigs} setConfigs={setTabConfigs} onLogout={handleLogout} />}
+      {activeTab === 'settings' && <Settings configs={tabConfigs} setConfigs={setTabConfigs} onLogout={() => { localStorage.removeItem('fm_engine_user'); window.location.reload(); }} />}
       {activeTab === 'sites' && (
         <div className="space-y-8 pb-20">
           <div className="flex justify-between items-end">
-            <div><h2 className="text-3xl font-black text-slate-900">Sites</h2><p className="text-slate-500 font-medium">Infrastructure</p></div>
+            <div><h2 className="text-3xl font-black text-slate-900">Sites</h2><p className="text-slate-500 font-medium">Physical Locations</p></div>
             <button onClick={() => setShowAddSite(true)} className="bg-slate-900 text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 shadow-lg active:scale-95 transition-all"><Plus size={20} /> New Site</button>
           </div>
           <div className="grid md:grid-cols-2 gap-8">
@@ -430,22 +296,20 @@ const App: React.FC = () => {
               <div key={site.id} className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm">
                 <div className="flex justify-between items-start mb-6"><div className="p-4 bg-blue-50 text-blue-600 rounded-2xl"><MapPin size={28} /></div><span className="text-[10px] font-black uppercase text-slate-400">#{site.code}</span></div>
                 <h3 className="text-2xl font-black text-slate-900">{site.name}</h3>
-                <p className="text-sm font-medium text-slate-500 mb-8">{site.location}</p>
-                <div className="pt-8 border-t border-slate-50">
-                  <div className="flex flex-wrap gap-2">{blocks.filter(b => b.site_id === site.id).map(block => (<div key={block.id} className="px-4 py-2 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold text-slate-700 flex items-center gap-2"><Layers size={14} /> {block.name}</div>))}</div>
-                </div>
+                <p className="text-sm font-medium text-slate-500">{site.location}</p>
               </div>
             ))}
           </div>
         </div>
       )}
 
+      {/* MODALS */}
       {showAddSR && (
         <div className="fixed inset-0 z-[1000] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4">
-          <form onSubmit={async (e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); await handleAddItem('service_requests', { id: `SR-${Math.floor(1000 + Math.random() * 9000)}`, title: fd.get('title'), description: fd.get('description'), site_id: fd.get('site_id') || null, status: SRStatus.NEW, source: SRSource.WEB, created_at: new Date().toISOString() }, setSrs, () => setShowAddSR(false)); }} className="bg-white w-full max-w-lg rounded-[40px] p-10 shadow-2xl space-y-8 animate-in zoom-in duration-300">
+          <form onSubmit={async (e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); await handleAddItem('service_requests', { id: `SR-${Math.floor(10000 + Math.random() * 90000)}`, title: fd.get('title'), description: fd.get('description'), site_id: fd.get('site_id') || null, status: SRStatus.NEW, source: SRSource.WEB, created_at: new Date().toISOString() }, setSrs, () => setShowAddSR(false)); }} className="bg-white w-full max-w-lg rounded-[40px] p-10 shadow-2xl space-y-8 animate-in zoom-in duration-300">
             <div className="flex justify-between items-center"><h3 className="text-3xl font-black text-slate-900">New Request</h3><button type="button" onClick={() => setShowAddSR(false)} className="p-2 bg-slate-100 rounded-full"><X size={24} /></button></div>
-            <div className="space-y-4 text-slate-900 font-bold"><input required name="title" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold border-2 border-transparent focus:border-blue-500" placeholder="Summary" /><textarea name="description" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-medium h-32 border-2 border-transparent focus:border-blue-500" placeholder="Details" /><select name="site_id" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold"><option value="">Select Facility</option>{sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
-            <button type="submit" disabled={isLoading} className="w-full bg-blue-600 text-white py-6 rounded-3xl font-black text-xl shadow-xl shadow-blue-100">{isLoading ? <Loader2 className="animate-spin mx-auto" /> : 'Create Ticket'}</button>
+            <div className="space-y-4"><input required name="title" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold border-2 border-transparent focus:border-blue-500 text-slate-900" placeholder="Problem Summary" /><textarea name="description" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-medium h-32 border-2 border-transparent focus:border-blue-500 text-slate-900" placeholder="Full Details" /><select name="site_id" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold text-slate-900"><option value="">Select Facility</option>{sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
+            <button type="submit" disabled={isLoading} className="w-full bg-blue-600 text-white py-6 rounded-3xl font-black text-xl shadow-xl shadow-blue-100">{isLoading ? <Loader2 className="animate-spin mx-auto" /> : 'Log Ticket'}</button>
           </form>
         </div>
       )}
@@ -455,7 +319,7 @@ const App: React.FC = () => {
            <form onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); handleAddItem('sites', { name: fd.get('name'), location: fd.get('location'), code: `SITE-${Math.floor(1000+Math.random()*9000)}`, status: Status.ACTIVE }, setSites, () => setShowAddSite(false)); }} className="bg-white w-full max-w-md rounded-[48px] p-12 shadow-2xl space-y-8 animate-in zoom-in duration-300">
               <div className="flex justify-between items-center"><h3 className="text-3xl font-black text-slate-900">New Site</h3><button type="button" onClick={() => setShowAddSite(false)} className="p-2 bg-slate-100 rounded-full"><X size={24} /></button></div>
               <div className="space-y-4"><input required name="name" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold text-slate-900 border-2 border-transparent focus:border-blue-500" placeholder="Facility Name" /><input required name="location" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold text-slate-900 border-2 border-transparent focus:border-blue-500" placeholder="Location" /></div>
-              <button type="submit" disabled={isLoading} className="w-full bg-slate-900 text-white py-6 rounded-3xl font-black">Create Infrastructure</button>
+              <button type="submit" disabled={isLoading} className="w-full bg-slate-900 text-white py-6 rounded-3xl font-black">Register Site</button>
            </form>
         </div>
       )}
@@ -468,14 +332,14 @@ const App: React.FC = () => {
               <div className="p-6 bg-blue-50 text-blue-700 rounded-2xl font-black flex items-center gap-4 text-lg border border-blue-100">
                 <Phone size={24} /> +{showApproveModal.phone}
               </div>
-              <input required name="name" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold text-slate-900 border-2 border-transparent focus:border-blue-500 transition-all" placeholder="Enter Full Name" />
+              <input required name="name" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold text-slate-900 border-2 border-transparent focus:border-blue-500" placeholder="Full Name" />
               <select required name="site_id" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold text-slate-900">
-                <option value="">Assign to Facility Site...</option>
+                <option value="">Assign to Facility...</option>
                 {sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </div>
-            <button type="submit" disabled={isLoading} className="w-full bg-emerald-600 text-white py-6 rounded-3xl font-black text-xl flex items-center justify-center gap-3 active:scale-95 shadow-xl shadow-emerald-100 transition-all hover:bg-emerald-700">
-               {isLoading ? <Loader2 className="animate-spin" /> : 'Finalize Activation'}
+            <button type="submit" disabled={isLoading} className="w-full bg-emerald-600 text-white py-6 rounded-3xl font-black text-xl flex items-center justify-center gap-3 active:scale-95 shadow-xl shadow-emerald-100 transition-all">
+               {isLoading ? <Loader2 className="animate-spin" /> : 'Confirm Approval'}
             </button>
           </form>
         </div>
