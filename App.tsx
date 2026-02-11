@@ -9,7 +9,7 @@ import Settings from './components/Settings';
 import Auth from './components/Auth';
 import TenantPortal from './components/TenantPortal';
 import { Site, Asset, ServiceRequest, SRStatus, Status, SRSource, TabConfig, UserProfile, Tenant, BlockType, Block, Organization, Requester } from './types';
-import { supabase, checkSchemaReady } from './lib/supabase';
+import { supabase } from './lib/supabase';
 import { 
   X, MapPin, Plus, Loader2, Wrench, ArrowRight, Layers, CheckCircle, Building, AlertCircle, RefreshCw, Phone, User, Package, UserCheck, Terminal, Rocket, Sparkles, UserCircle, UserMinus
 } from 'lucide-react';
@@ -74,7 +74,7 @@ const Onboarding: React.FC<{ user: UserProfile, onComplete: (user: UserProfile) 
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6 text-slate-900">
       <div className="max-w-md w-full bg-white rounded-[48px] p-12 shadow-2xl border border-slate-100 space-y-8 animate-in zoom-in duration-500 relative overflow-hidden">
         <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 rounded-full -mr-16 -mt-16" />
         <div className="flex justify-between items-center relative z-10">
@@ -103,8 +103,8 @@ const Onboarding: React.FC<{ user: UserProfile, onComplete: (user: UserProfile) 
           <div className="space-y-6 animate-in slide-in-from-right duration-300">
             <h2 className="text-3xl font-black text-slate-900">Primary Site</h2>
             <div className="space-y-4">
-              <input autoFocus className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 focus:bg-white rounded-3xl p-5 outline-none font-bold" placeholder="Site Name" value={siteName} onChange={e => setSiteName(e.target.value)} />
-              <input className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 focus:bg-white rounded-3xl p-5 outline-none font-bold" placeholder="Location" value={siteLocation} onChange={e => setSiteLocation(e.target.value)} />
+              <input autoFocus className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 focus:bg-white rounded-3xl p-5 outline-none font-bold text-slate-800" placeholder="Site Name" value={siteName} onChange={e => setSiteName(e.target.value)} />
+              <input className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 focus:bg-white rounded-3xl p-5 outline-none font-bold text-slate-800" placeholder="Location" value={siteLocation} onChange={e => setSiteLocation(e.target.value)} />
             </div>
             <button disabled={loading || !siteName || !siteLocation} onClick={handleSetup} className="w-full bg-blue-600 text-white py-6 rounded-3xl font-black flex items-center justify-center gap-3 transition-all hover:bg-blue-700">
               {loading ? <Loader2 className="animate-spin" /> : <>Complete Setup <Rocket /></>}
@@ -150,12 +150,8 @@ const App: React.FC = () => {
   });
 
   const [showAddSite, setShowAddSite] = useState(false);
-  const [showAddBlock, setShowAddBlock] = useState(false);
-  const [showAddAsset, setShowAddAsset] = useState(false);
-  const [showAddTenant, setShowAddTenant] = useState(false);
   const [showAddSR, setShowAddSR] = useState(false);
   const [showApproveModal, setShowApproveModal] = useState<Requester | null>(null);
-  const [activeSiteForBlock, setActiveSiteForBlock] = useState<string | null>(null);
 
   const fetchBlocks = useCallback(async (siteIds: string[]) => {
     if (siteIds.length === 0) return;
@@ -196,32 +192,33 @@ const App: React.FC = () => {
   const syncOrphanedRequesters = useCallback(async () => {
     if (!currentUser?.org_id) return;
     
-    // 1. Get all tickets sent via WhatsApp for this org
     const { data: whatsappSRs } = await supabase
       .from('service_requests')
-      .select('requester_phone')
-      .eq('org_id', currentUser.org_id)
+      .select('requester_phone, org_id')
       .eq('source', 'WhatsApp');
       
     if (!whatsappSRs) return;
 
-    const phones = [...new Set(whatsappSRs.map(sr => sr.requester_phone).filter(Boolean))];
-    if (phones.length === 0) return;
+    const relevantPhones = [...new Set(whatsappSRs
+      .filter(sr => !sr.org_id || sr.org_id === currentUser.org_id)
+      .map(sr => sr.requester_phone)
+      .filter(Boolean)
+    )];
 
-    // 2. Identify phones that aren't yet in our requester log AT ALL (any status)
-    const { data: existingRequesters } = await supabase.from('requesters').select('phone').in('phone', phones);
-    const loggedPhones = new Set(existingRequesters?.map(r => r.phone) || []);
-    
-    // 3. Identify phones that aren't registered tenants (profiles)
-    const { data: existingTenants } = await supabase.from('tenants').select('phone').in('phone', phones);
-    const registeredPhones = new Set(existingTenants?.map(t => t.phone) || []);
-    
-    // Strangers = (phones in WhatsApp SRs) MINUS (already in requesters OR already a registered tenant)
-    const unknownPhones = phones.filter(p => p && !registeredPhones.has(p) && !loggedPhones.has(p));
+    if (relevantPhones.length === 0) return;
 
-    // 4. Populate Approval queue ONLY for truly unknown WhatsApp users
-    if (unknownPhones.length > 0) {
-      const inserts = unknownPhones.map(p => ({ 
+    const [existingReqs, existingTens] = await Promise.all([
+      supabase.from('requesters').select('phone').in('phone', relevantPhones),
+      supabase.from('tenants').select('phone').in('phone', relevantPhones)
+    ]);
+
+    const loggedPhones = new Set(existingReqs.data?.map(r => r.phone) || []);
+    const registeredPhones = new Set(existingTens.data?.map(t => t.phone) || []);
+    
+    const trulyUnknown = relevantPhones.filter(p => !loggedPhones.has(p) && !registeredPhones.has(p));
+
+    if (trulyUnknown.length > 0) {
+      const inserts = trulyUnknown.map(p => ({ 
         phone: p, 
         org_id: currentUser.org_id, 
         status: 'pending' 
@@ -229,10 +226,47 @@ const App: React.FC = () => {
       await supabase.from('requesters').upsert(inserts, { onConflict: 'phone' });
     }
     
-    // Always re-fetch pending requesters to ensure state is fresh
-    const { data: updatedReqs } = await supabase.from('requesters').select('*').eq('org_id', currentUser.org_id).eq('status', 'pending');
-    if (updatedReqs) setRequesters(updatedReqs);
+    const { data: finalReqs } = await supabase
+      .from('requesters')
+      .select('*')
+      .eq('org_id', currentUser.org_id)
+      .eq('status', 'pending');
+    
+    if (finalReqs) setRequesters(finalReqs);
   }, [currentUser?.org_id]);
+
+  // REALTIME SUBSCRIPTION
+  useEffect(() => {
+    if (!currentUser?.org_id) return;
+
+    const channel = supabase
+      .channel('schema-db-changes')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'service_requests' }, (payload) => {
+        const newSR = payload.new as ServiceRequest;
+        if (!newSR.org_id || newSR.org_id === currentUser.org_id) {
+          setSrs(prev => [newSR, ...prev].sort((a,b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
+          // If it's a WhatsApp SR, we might need a new Approval entry
+          if (newSR.source === 'WhatsApp') {
+            syncOrphanedRequesters();
+          }
+        }
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'requesters' }, (payload) => {
+        const newReq = payload.new as Requester;
+        if (newReq.org_id === currentUser.org_id && newReq.status === 'pending') {
+          setRequesters(prev => [newReq, ...prev]);
+        }
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'service_requests' }, (payload) => {
+        const updatedSR = payload.new as ServiceRequest;
+        setSrs(prev => prev.map(sr => sr.id === updatedSR.id ? updatedSR : sr));
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [currentUser?.org_id, syncOrphanedRequesters]);
 
   useEffect(() => {
     if (currentUser?.org_id) {
@@ -264,7 +298,11 @@ const App: React.FC = () => {
     try {
       const { data, error } = await supabase.from(table).insert([{ ...payload, org_id: currentUser?.org_id }]).select();
       if (error) throw error;
-      if (data) { setter((prev: any) => [data[0], ...prev]); closeFn(); }
+      if (data) { 
+        // Realtime will handle the list update, but we call setter to be safe for non-realtime fallback
+        setter((prev: any) => [data[0], ...prev]); 
+        closeFn(); 
+      }
     } catch (e: any) { alert(e.message); }
     finally { setIsLoading(false); }
   };
@@ -303,7 +341,7 @@ const App: React.FC = () => {
   };
 
   const handleRejectRequester = async (requester: Requester) => {
-    if (!confirm(`Are you sure you want to reject +${requester.phone}? They will no longer appear in the queue even if they message again.`)) return;
+    if (!confirm(`Reject +${requester.phone}? They will be removed permanently.`)) return;
     setIsLoading(true);
     try {
       await supabase.from('requesters').update({ status: 'rejected' }).eq('id', requester.id);
@@ -316,18 +354,26 @@ const App: React.FC = () => {
   if (!currentUser.org_id && currentUser.role === 'admin') return <Onboarding user={currentUser} onComplete={setCurrentUser} />;
   if (currentUser.role === 'tenant') return <TenantPortal user={currentUser} onLogout={handleLogout} />;
 
+  const pendingApprovalsCount = requesters.length;
+
   return (
-    <Layout activeTab={activeTab} onTabChange={setActiveTab} dbStatus={dbStatus === 'error' ? 'error' : (dbStatus === 'connected' ? 'connected' : 'connecting')} tabConfigs={tabConfigs} orgName={organization?.name}>
+    <Layout 
+      activeTab={activeTab} 
+      onTabChange={setActiveTab} 
+      dbStatus={dbStatus === 'error' ? 'error' : (dbStatus === 'connected' ? 'connected' : 'connecting')} 
+      tabConfigs={tabConfigs.map(t => t.id === 'requesters' && pendingApprovalsCount > 0 ? { ...t, label: `Approvals (${pendingApprovalsCount})` } : t)} 
+      orgName={organization?.name}
+    >
       {activeTab === 'dashboard' && <Dashboard srs={srs} onNewRequest={() => setShowAddSR(true)} assets={assets} organization={organization} />}
       {activeTab === 'srs' && <SRList srs={srs} sites={sites} assets={assets} onSelect={() => {}} onNewRequest={() => setShowAddSR(true)} />}
-      {activeTab === 'tenants' && <TenantList tenants={tenants} sites={sites} onAdd={() => setShowAddTenant(true)} />}
+      {activeTab === 'tenants' && <TenantList tenants={tenants} sites={sites} onAdd={() => {}} />}
       
       {activeTab === 'requesters' && (
         <div className="space-y-6 animate-in fade-in duration-500">
           <div className="flex justify-between items-end">
             <div>
               <h2 className="text-3xl font-black text-slate-900">Approvals</h2>
-              <p className="text-slate-500 font-medium">Verify WhatsApp identities to grant dashboard access.</p>
+              <p className="text-slate-500 font-medium">Strangers messaging via WhatsApp.</p>
             </div>
             <button 
               onClick={handleManualRefresh} 
@@ -341,15 +387,18 @@ const App: React.FC = () => {
             {requesters.map(req => (
               <div key={req.id} className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm flex flex-col justify-between hover:border-blue-200 transition-all animate-in slide-in-from-bottom-4 duration-300">
                 <div className="flex items-center gap-4 mb-6">
-                  <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center"><Phone size={24} /></div>
+                  <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center relative">
+                    <Phone size={24} />
+                    <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 border-2 border-white rounded-full"></div>
+                  </div>
                   <div>
                     <p className="text-lg font-black text-slate-900">+{req.phone}</p>
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">WhatsApp Request</p>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Incoming ID Request</p>
                   </div>
                 </div>
                 <div className="flex gap-3">
                   <button onClick={() => setShowApproveModal(req)} className="flex-1 bg-slate-900 text-white py-4 rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-slate-800 transition-all active:scale-95 shadow-lg shadow-slate-100">
-                    <UserCheck size={20} /> Approve
+                    <UserCheck size={20} /> Approve User
                   </button>
                   <button onClick={() => handleRejectRequester(req)} className="p-4 bg-red-50 text-red-600 rounded-2xl hover:bg-red-100 transition-all active:scale-95">
                     <UserMinus size={20} />
@@ -360,23 +409,20 @@ const App: React.FC = () => {
             {requesters.length === 0 && (
               <div className="col-span-full py-24 text-center bg-white rounded-[40px] border-2 border-dashed border-slate-100">
                 <Sparkles className="text-slate-200 mx-auto mb-4" size={48} />
-                <p className="text-slate-400 font-black text-xl">Queue is Clear</p>
-                <p className="text-slate-400 text-sm mt-2 max-w-xs mx-auto">Strangers who message via WhatsApp will appear here for identification.</p>
-                <button onClick={handleManualRefresh} className="mt-6 text-blue-600 font-bold text-xs uppercase tracking-widest hover:underline flex items-center gap-2 mx-auto">
-                   <RefreshCw size={14} /> Scan for New Signals
-                </button>
+                <p className="text-slate-400 font-black text-xl">No pending approvals</p>
+                <p className="text-slate-400 text-sm mt-2 max-w-xs mx-auto">New WhatsApp users will appear here live when they message.</p>
               </div>
             )}
           </div>
         </div>
       )}
 
-      {activeTab === 'assets' && <AssetList assets={assets} sites={sites} blocks={blocks} onAdd={() => setShowAddAsset(true)} />}
+      {activeTab === 'assets' && <AssetList assets={assets} sites={sites} blocks={blocks} onAdd={() => {}} />}
       {activeTab === 'settings' && <Settings configs={tabConfigs} setConfigs={setTabConfigs} onLogout={handleLogout} />}
       {activeTab === 'sites' && (
         <div className="space-y-8 pb-20">
           <div className="flex justify-between items-end">
-            <div><h2 className="text-3xl font-black text-slate-900">Sites</h2><p className="text-slate-500 font-medium">Physical Infrastructure</p></div>
+            <div><h2 className="text-3xl font-black text-slate-900">Sites</h2><p className="text-slate-500 font-medium">Infrastructure</p></div>
             <button onClick={() => setShowAddSite(true)} className="bg-slate-900 text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 shadow-lg active:scale-95 transition-all"><Plus size={20} /> New Site</button>
           </div>
           <div className="grid md:grid-cols-2 gap-8">
@@ -386,7 +432,6 @@ const App: React.FC = () => {
                 <h3 className="text-2xl font-black text-slate-900">{site.name}</h3>
                 <p className="text-sm font-medium text-slate-500 mb-8">{site.location}</p>
                 <div className="pt-8 border-t border-slate-50">
-                  <button onClick={() => { setActiveSiteForBlock(site.id); setShowAddBlock(true); }} className="text-xs font-bold text-blue-600 flex items-center gap-1 mb-4 hover:underline"><Plus size={14} /> Add Block</button>
                   <div className="flex flex-wrap gap-2">{blocks.filter(b => b.site_id === site.id).map(block => (<div key={block.id} className="px-4 py-2 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold text-slate-700 flex items-center gap-2"><Layers size={14} /> {block.name}</div>))}</div>
                 </div>
               </div>
@@ -395,33 +440,12 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* MODALS */}
       {showAddSR && (
         <div className="fixed inset-0 z-[1000] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4">
           <form onSubmit={async (e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); await handleAddItem('service_requests', { id: `SR-${Math.floor(1000 + Math.random() * 9000)}`, title: fd.get('title'), description: fd.get('description'), site_id: fd.get('site_id') || null, status: SRStatus.NEW, source: SRSource.WEB, created_at: new Date().toISOString() }, setSrs, () => setShowAddSR(false)); }} className="bg-white w-full max-w-lg rounded-[40px] p-10 shadow-2xl space-y-8 animate-in zoom-in duration-300">
-            <div className="flex justify-between items-center"><h3 className="text-3xl font-black text-slate-900">New Request</h3><button type="button" onClick={() => setShowAddSR(false)} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200 transition-colors"><X size={24} /></button></div>
-            <div className="space-y-4"><input required name="title" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold border-2 border-transparent focus:border-blue-500" placeholder="Problem Summary" /><textarea name="description" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-medium h-32 border-2 border-transparent focus:border-blue-500" placeholder="Full Details" /><select name="site_id" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold"><option value="">Facility Context</option>{sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
-            <button type="submit" disabled={isLoading} className="w-full bg-blue-600 text-white py-6 rounded-3xl font-black text-xl shadow-xl shadow-blue-100">{isLoading ? <Loader2 className="animate-spin mx-auto" /> : 'Log Ticket'}</button>
-          </form>
-        </div>
-      )}
-
-      {showAddAsset && (
-        <div className="fixed inset-0 z-[1000] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4">
-          <form onSubmit={async (e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); await handleAddItem('assets', { name: fd.get('name'), type: fd.get('type'), code: `AST-${Math.floor(Math.random()*9000)}`, site_id: fd.get('site_id'), status: Status.ACTIVE }, setAssets, () => setShowAddAsset(false)); }} className="bg-white w-full max-w-lg rounded-[40px] p-10 shadow-2xl space-y-8 animate-in zoom-in duration-300">
-            <div className="flex justify-between items-center"><h3 className="text-3xl font-black text-slate-900">Add Asset</h3><button type="button" onClick={() => setShowAddAsset(false)} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200"><X size={24} /></button></div>
-            <div className="space-y-4"><input required name="name" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold" placeholder="Asset Name" /><input name="type" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold" placeholder="Equipment Type" /><select required name="site_id" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold"><option value="">Assign Site</option>{sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
-            <button type="submit" disabled={isLoading} className="w-full bg-slate-900 text-white py-6 rounded-3xl font-black">{isLoading ? <Loader2 className="animate-spin mx-auto" /> : 'Save Asset'}</button>
-          </form>
-        </div>
-      )}
-
-      {showAddTenant && (
-        <div className="fixed inset-0 z-[1000] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4">
-          <form onSubmit={async (e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); await handleAddItem('tenants', { name: fd.get('name'), phone: fd.get('phone'), site_id: fd.get('site_id'), status: Status.ACTIVE }, setTenants, () => setShowAddTenant(false)); }} className="bg-white w-full max-w-lg rounded-[40px] p-10 shadow-2xl space-y-8 animate-in zoom-in duration-300">
-            <div className="flex justify-between items-center"><h3 className="text-3xl font-black text-slate-900">New Tenant</h3><button type="button" onClick={() => setShowAddTenant(false)} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200"><X size={24} /></button></div>
-            <div className="space-y-4"><input required name="name" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold" placeholder="Resident Name" /><input required name="phone" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold" placeholder="Mobile Number" /><select required name="site_id" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold"><option value="">Facility Site</option>{sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
-            <button type="submit" disabled={isLoading} className="w-full bg-slate-900 text-white py-6 rounded-3xl font-black">Register Resident</button>
+            <div className="flex justify-between items-center"><h3 className="text-3xl font-black text-slate-900">New Request</h3><button type="button" onClick={() => setShowAddSR(false)} className="p-2 bg-slate-100 rounded-full"><X size={24} /></button></div>
+            <div className="space-y-4 text-slate-900 font-bold"><input required name="title" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold border-2 border-transparent focus:border-blue-500" placeholder="Summary" /><textarea name="description" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-medium h-32 border-2 border-transparent focus:border-blue-500" placeholder="Details" /><select name="site_id" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold"><option value="">Select Facility</option>{sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
+            <button type="submit" disabled={isLoading} className="w-full bg-blue-600 text-white py-6 rounded-3xl font-black text-xl shadow-xl shadow-blue-100">{isLoading ? <Loader2 className="animate-spin mx-auto" /> : 'Create Ticket'}</button>
           </form>
         </div>
       )}
@@ -429,9 +453,9 @@ const App: React.FC = () => {
       {showAddSite && (
         <div className="fixed inset-0 z-[1000] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4">
            <form onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); handleAddItem('sites', { name: fd.get('name'), location: fd.get('location'), code: `SITE-${Math.floor(1000+Math.random()*9000)}`, status: Status.ACTIVE }, setSites, () => setShowAddSite(false)); }} className="bg-white w-full max-w-md rounded-[48px] p-12 shadow-2xl space-y-8 animate-in zoom-in duration-300">
-              <div className="flex justify-between items-center"><h3 className="text-3xl font-black text-slate-900">New Site</h3><button type="button" onClick={() => setShowAddSite(false)} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200"><X size={24} /></button></div>
-              <div className="space-y-4"><input required name="name" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold border-2 border-transparent focus:border-blue-500" placeholder="Facility Name" /><input required name="location" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold border-2 border-transparent focus:border-blue-500" placeholder="Physical Address" /></div>
-              <button type="submit" disabled={isLoading} className="w-full bg-slate-900 text-white py-6 rounded-3xl font-black text-lg">Create Infrastructure</button>
+              <div className="flex justify-between items-center"><h3 className="text-3xl font-black text-slate-900">New Site</h3><button type="button" onClick={() => setShowAddSite(false)} className="p-2 bg-slate-100 rounded-full"><X size={24} /></button></div>
+              <div className="space-y-4"><input required name="name" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold text-slate-900 border-2 border-transparent focus:border-blue-500" placeholder="Facility Name" /><input required name="location" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold text-slate-900 border-2 border-transparent focus:border-blue-500" placeholder="Location" /></div>
+              <button type="submit" disabled={isLoading} className="w-full bg-slate-900 text-white py-6 rounded-3xl font-black">Create Infrastructure</button>
            </form>
         </div>
       )}
@@ -439,13 +463,13 @@ const App: React.FC = () => {
       {showApproveModal && (
         <div className="fixed inset-0 z-[1000] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4">
           <form onSubmit={async (e) => { e.preventDefault(); await handleApproveTenant(showApproveModal, new FormData(e.currentTarget)); }} className="bg-white w-full max-w-lg rounded-[40px] p-10 shadow-2xl space-y-8 animate-in zoom-in duration-300">
-            <div className="flex justify-between items-center"><h3 className="text-3xl font-black text-slate-900">Confirm Identity</h3><button type="button" onClick={() => setShowApproveModal(null)} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200"><X size={24} /></button></div>
+            <div className="flex justify-between items-center"><h3 className="text-3xl font-black text-slate-900">Activate Resident</h3><button type="button" onClick={() => setShowApproveModal(null)} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200"><X size={24} /></button></div>
             <div className="space-y-4">
               <div className="p-6 bg-blue-50 text-blue-700 rounded-2xl font-black flex items-center gap-4 text-lg border border-blue-100">
                 <Phone size={24} /> +{showApproveModal.phone}
               </div>
-              <input required name="name" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold border-2 border-transparent focus:border-blue-500 transition-all" placeholder="Enter Full Name" />
-              <select required name="site_id" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold">
+              <input required name="name" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold text-slate-900 border-2 border-transparent focus:border-blue-500 transition-all" placeholder="Enter Full Name" />
+              <select required name="site_id" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold text-slate-900">
                 <option value="">Assign to Facility Site...</option>
                 {sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>

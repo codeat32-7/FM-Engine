@@ -1,5 +1,5 @@
 
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import { createClient } from '@supabase/supabase-js';
 
 export const config = {
@@ -23,48 +23,55 @@ export default async function handler(req: Request) {
 
     if (!body) return new Response('No body found', { status: 400 });
 
-    const cleanFrom = from.replace('whatsapp:', '').replace('+', '');
+    // Clean phone number to digits only
+    const cleanFrom = from.replace('whatsapp:', '').replace('+', '').replace(/\s/g, '');
 
     // 1. Resolve Identity Context
     let orgId: string | null = null;
     let siteId: string | null = null;
-    let senderName: string = 'Anonymous';
+    let senderName: string = 'User';
 
-    // Check Profiles - specifically looking for profiles with an assigned org_id
+    // Step A: Check if this phone belongs to a known Profile
     const { data: profiles } = await supabase
       .from('profiles')
       .select('org_id, role, full_name')
       .eq('phone', cleanFrom);
     
-    // Prioritize the profile that has an org_id (the onboarded context)
     const activeProfile = profiles?.find(p => p.org_id) || profiles?.[0];
     
     if (activeProfile && activeProfile.org_id) {
       orgId = activeProfile.org_id;
       senderName = activeProfile.full_name || 'User';
       
-      // If tenant, get site hint
       if (activeProfile.role === 'tenant') {
         const { data: tData } = await supabase.from('tenants').select('site_id').eq('phone', cleanFrom).maybeSingle();
         siteId = tData?.site_id || null;
       }
     } else {
-      // Fallback for brand new users - try to find the most recently created organization 
-      // This is a triage measure for new sandboxes
-      const { data: activeOrgs } = await supabase.from('organizations').select('id').order('created_at', { ascending: false }).limit(1);
-      orgId = activeOrgs?.[0]?.id || null;
+      // Step B: Stranger detected. Find the organization to "host" this request.
+      // We look for the most recently created organization as the likely active one.
+      const { data: latestOrgs } = await supabase
+        .from('organizations')
+        .select('id')
+        .order('created_at', { ascending: false })
+        .limit(1);
+      
+      orgId = latestOrgs?.[0]?.id || null;
 
       if (orgId) {
-        // Log them as a requester so Admin sees them in the "Approvals" tab
+        // Step C: Immediately add to Requesters queue if not already there
+        // Use upsert to handle existing records without erroring
         await supabase.from('requesters').upsert({
           phone: cleanFrom,
           org_id: orgId,
           status: 'pending'
-        }, { onConflict: 'phone' });
+        }, { onConflict: 'phone' }); 
       }
     }
 
-    if (!orgId) return new Response('Organization not found. Please setup the dashboard first.', { status: 404 });
+    if (!orgId) {
+      return new Response('System not initialized. Please create an organization first.', { status: 404 });
+    }
 
     // 2. AI Intelligence for ticket title
     let title = body.slice(0, 40);
@@ -73,7 +80,7 @@ export default async function handler(req: Request) {
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         const res = await ai.models.generateContent({
           model: 'gemini-3-flash-preview',
-          contents: `Create a 3-word professional maintenance ticket title for this message: "${body}"`,
+          contents: `Summarize this maintenance request into 3 words: "${body}"`,
         });
         if (res.text) title = res.text.trim().replace(/[".*]/g, '');
       }
@@ -96,7 +103,7 @@ export default async function handler(req: Request) {
 
     const reply = activeProfile?.org_id 
       ? `✅ Ticket ${srId} logged for ${senderName}. We are on it!`
-      : `✅ Ticket ${srId} logged. Welcome to the platform! Please wait for admin approval to view your unit details.`;
+      : `✅ Ticket ${srId} logged. We've added you to our approval queue. Please wait for the facility manager to confirm your unit.`;
 
     return new Response(`<?xml version="1.0" encoding="UTF-8"?><Response><Message>${reply}</Message></Response>`, {
       headers: { 'Content-Type': 'text/xml' },
