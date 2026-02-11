@@ -298,11 +298,13 @@ const App: React.FC = () => {
     };
     init();
     return () => { if (cleanup) cleanup(); };
-  }, [currentUser?.id, currentUser?.onboarded, fetchOrgData, setupRealtime]);
+  }, [currentUser?.id, currentUser?.onboarded, currentUser?.org_id, fetchOrgData, setupRealtime]);
 
   const handleSignIn = async (user: UserProfile) => {
     localStorage.setItem('fm_engine_user', JSON.stringify(user));
     setCurrentUser(user);
+    // Explicitly reset UI to dashboard when switching contexts
+    setActiveTab('dashboard');
   };
 
   const handleLogout = () => {
@@ -521,7 +523,7 @@ const App: React.FC = () => {
       {showAddSite && (
         <div className="fixed inset-0 z-[1000] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4">
            <form onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); handleAddItem('sites', { name: fd.get('name'), location: fd.get('location'), code: `SITE-${Math.floor(1000+Math.random()*9000)}`, status: Status.ACTIVE }, setSites, () => setShowAddSite(false)); }} className="bg-white w-full max-w-md rounded-[48px] p-12 shadow-2xl space-y-8 animate-in zoom-in duration-300">
-              <div className="flex justify-between items-center"><h3 className="text-3xl font-black text-slate-900">New Site</h3><button type="button" onClick={() => setShowAddSite(false)} className="p-2 bg-slate-50 rounded-full hover:bg-slate-200 transition-colors"><X size={24} /></button></div>
+              <div className="flex justify-between items-center"><h3 className="text-3xl font-black text-slate-900">New Site</h3><button type="button" onClick={() => setShowAddSite(false)} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200 transition-colors"><X size={24} /></button></div>
               <div className="space-y-4">
                 <input required name="name" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold focus:bg-white border-2 border-transparent focus:border-blue-500" placeholder="Site Name" />
                 <input required name="location" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold focus:border-blue-500" placeholder="Location" />
