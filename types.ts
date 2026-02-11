@@ -36,7 +36,7 @@ export interface UserProfile {
   phone: string;
   full_name: string;
   onboarded: boolean;
-  role?: 'admin' | 'tenant';
+  role: 'admin' | 'tenant';
 }
 
 export interface Site {
@@ -65,7 +65,7 @@ export interface Tenant {
   name: string;
   phone: string;
   status: Status;
-  requester_id?: string;
+  profile_id?: string;
 }
 
 export interface Requester {
@@ -103,15 +103,16 @@ export interface ServiceRequest {
   created_at: string;
 }
 
-export interface ExtractedSR {
-  title: string;
-  siteNameHint: string;
-  assetNameHint: string;
-}
-
 export interface TabConfig {
   id: string;
   label: string;
   iconName: 'LayoutDashboard' | 'Wrench' | 'MapPin' | 'Package' | 'Users' | 'UserCheck';
   isVisible: boolean;
+}
+
+// Interface for AI-extracted Service Request data
+export interface ExtractedSR {
+  title: string;
+  siteNameHint: string;
+  assetNameHint: string;
 }

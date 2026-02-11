@@ -9,22 +9,27 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 /**
  * 🛠 MASTER SCHEMA SETUP (Supabase SQL Editor):
  * 
- * -- 1. Service Requests Column
- * ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS requester_phone TEXT;
+ * -- 1. Unified Profiles (Identity & RBAC)
+ * CREATE TABLE IF NOT EXISTS profiles (
+ *   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+ *   org_id UUID REFERENCES organizations(id),
+ *   phone TEXT UNIQUE NOT NULL,
+ *   full_name TEXT,
+ *   role TEXT NOT NULL CHECK (role IN ('admin', 'tenant')),
+ *   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+ * );
  * 
- * -- 2. Requester Table (CRITICAL: phone must be UNIQUE)
+ * -- 2. Requesters (The Intake Queue)
  * CREATE TABLE IF NOT EXISTS requesters (
  *   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
  *   org_id UUID REFERENCES organizations(id),
  *   phone TEXT NOT NULL UNIQUE,
- *   name TEXT,
  *   status TEXT DEFAULT 'pending',
  *   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
  * );
  * 
- * -- 3. Database Publications for Realtime
- * -- Make sure 'service_requests' and 'requesters' are selected in:
- * -- Database > Publications > supabase_realtime
+ * -- 3. Service Requests Column
+ * ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS requester_phone TEXT;
  */
 
 export interface ConnectionStatus {
@@ -35,23 +40,18 @@ export interface ConnectionStatus {
 
 export const checkSchemaReady = async (): Promise<ConnectionStatus> => {
   try {
-    const { error: orgErr } = await supabase.from('organizations').select('id').limit(1);
-    if (orgErr && (orgErr.code === 'PGRST205' || orgErr.message.includes('does not exist'))) {
-      return { connected: false, needsSetup: true, error: "Missing 'organizations' table." };
+    const { error: profErr } = await supabase.from('profiles').select('id').limit(1);
+    if (profErr && (profErr.code === 'PGRST205' || profErr.message.includes('does not exist'))) {
+      return { connected: false, needsSetup: true, error: "Missing 'profiles' table." };
     }
 
     const { error: srErr } = await supabase.from('service_requests').select('requester_phone').limit(1);
     if (srErr && (srErr.message.includes('column') || srErr.message.includes('does not exist'))) {
-      return { connected: false, needsSetup: true, error: "Missing 'requester_phone' column in service_requests table." };
-    }
-
-    const { error: reqErr } = await supabase.from('requesters').select('id').limit(1);
-    if (reqErr && (reqErr.code === 'PGRST205' || reqErr.message.includes('does not exist'))) {
-      return { connected: false, needsSetup: true, error: "Missing 'requesters' table." };
+      return { connected: false, needsSetup: true, error: "Missing 'requester_phone' column." };
     }
     
     return { connected: true };
   } catch (e: any) {
-    return { connected: false, error: e.message || 'Unknown connection error' };
+    return { connected: false, error: e.message || 'Unknown error' };
   }
 };

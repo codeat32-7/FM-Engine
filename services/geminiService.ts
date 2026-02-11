@@ -2,20 +2,12 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { ExtractedSR } from "../types";
 
+// Function to analyze maintenance messages and extract structured SR data using Gemini
 export const extractSRInfo = async (message: string): Promise<ExtractedSR> => {
   try {
-    // Initialize inside the function to ensure process.env exists
-    const apiKey = process.env.API_KEY;
-    if (!apiKey) {
-      console.warn("Gemini API Key is missing. Check your Vercel Environment Variables.");
-      return {
-        title: message.slice(0, 30),
-        siteNameHint: "Unknown",
-        assetNameHint: "Unknown"
-      };
-    }
-
-    const ai = new GoogleGenAI({ apiKey });
+    // Initializing the AI client using process.env.API_KEY directly as per SDK requirements
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+    
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: `Extract maintenance information from the following message: "${message}"`,
@@ -34,10 +26,14 @@ export const extractSRInfo = async (message: string): Promise<ExtractedSR> => {
       }
     });
 
-    const text = response.text || "";
-    return JSON.parse(text.trim()) as ExtractedSR;
+    // Accessing the extracted text directly via the .text property (not a method)
+    const text = response.text?.trim() || "";
+    if (!text) throw new Error("Empty response from Gemini API");
+    
+    return JSON.parse(text) as ExtractedSR;
   } catch (error) {
     console.error("Gemini Extraction Error:", error);
+    // Fallback logic in case of API failure
     return {
       title: message.slice(0, 30) + (message.length > 30 ? "..." : ""),
       siteNameHint: "Unknown",
