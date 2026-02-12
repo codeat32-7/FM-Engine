@@ -11,6 +11,7 @@ export default async function handler(req: Request) {
     return new Response('Method Not Allowed', { status: 405 });
   }
 
+  // Use Service Role key to bypass RLS for webhook logic
   const supabase = createClient(
     process.env.SUPABASE_URL || '',
     process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || ''
@@ -19,6 +20,7 @@ export default async function handler(req: Request) {
   try {
     const text = await req.text();
     const params = new URLSearchParams(text);
+    
     const body = params.get('Body') || '';
     const from = params.get('From') || ''; 
 
@@ -26,7 +28,6 @@ export default async function handler(req: Request) {
 
     const cleanFrom = from.replace(/[^0-9]/g, '');
     const phoneSuffix = cleanFrom.slice(-10);
-    const msgUpper = body.toUpperCase();
 
     // 1. SELECT THE LATEST ORGANIZATION (Demo Scope)
     const { data: latestOrg, error: orgError } = await supabase
@@ -37,13 +38,16 @@ export default async function handler(req: Request) {
       .maybeSingle();
 
     if (orgError || !latestOrg) {
-      return new Response('Error: No active organization found.', { status: 500 });
+      console.error('Org Error:', orgError);
+      return new Response('No organization found.', { status: 500 });
     }
 
     const targetOrgId = latestOrg.id;
 
-    // 2. IDENTIFY SENDER WITHIN THIS ORGANIZATION
-    // Priority: Profile (Admin/Tenant) > Requester (Approval Queue)
+    // 2. IDENTIFY SENDER WITHIN THIS SPECIFIC ORGANIZATION
+    let identifiedUser: { name?: string; role?: string; isNew: boolean } = { isNew: false };
+
+    // A. Search in Profiles for Admin/Tenant within this org
     const { data: profile } = await supabase
       .from('profiles')
       .select('id, full_name, role')
@@ -51,10 +55,14 @@ export default async function handler(req: Request) {
       .ilike('phone', `%${phoneSuffix}`)
       .maybeSingle();
 
-    let userRole = profile ? profile.role : null;
-    let isNewToOrg = false;
-
-    if (!profile) {
+    if (profile) {
+      identifiedUser = { 
+        name: profile.full_name, 
+        role: profile.role, 
+        isNew: false 
+      };
+    } else {
+      // B. Search in Requesters table for this org
       const { data: requester } = await supabase
         .from('requesters')
         .select('id, status')
@@ -62,52 +70,45 @@ export default async function handler(req: Request) {
         .ilike('phone', `%${phoneSuffix}`)
         .maybeSingle();
 
-      if (!requester) {
-        // Record as new requester if unknown in this specific org
+      if (requester) {
+        identifiedUser = { 
+          role: 'requester', 
+          isNew: false 
+        };
+      } else {
+        // C. Completely new contact -> Create Requester record (Approval)
         await supabase.from('requesters').insert([{
           phone: cleanFrom,
           org_id: targetOrgId,
           status: 'pending',
           created_at: new Date().toISOString()
         }]);
-        isNewToOrg = true;
+        identifiedUser = { isNew: true };
       }
     }
 
-    // 3. OPTIONAL SITE MATCHING (within the org)
-    let targetSiteId = null;
-    const siteMatch = msgUpper.match(/(?:SITE-|S-?)(\d{3,})/);
-    if (siteMatch) {
-      const { data: site } = await supabase
-        .from('sites')
-        .select('id')
-        .eq('org_id', targetOrgId)
-        .ilike('code', `%${siteMatch[1]}%`)
-        .maybeSingle();
-      if (site) targetSiteId = site.id;
-    }
-
-    // 4. LOG THE TICKET
+    // 3. LOG THE SERVICE REQUEST
     const cleanBody = body.replace(/join\s+[a-z-]+\s*/gi, '').trim();
     let title = cleanBody.slice(0, 40) || 'Maintenance Request';
     
-    // Quick AI Triage if available
+    // AI Title Generation (Gemini 3 Flash)
     if (process.env.API_KEY && cleanBody.length > 5) {
       try {
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         const res = await ai.models.generateContent({
           model: 'gemini-3-flash-preview',
-          contents: `Create a 3-word title for this: "${cleanBody}"`,
+          contents: `Summarize this maintenance request into a 3-word title: "${cleanBody}"`,
         });
         if (res.text) title = res.text.trim().replace(/[".*]/g, '');
-      } catch (e) {}
+      } catch (e) {
+        console.error('AI Title Failure:', e);
+      }
     }
 
     const srId = `SR-${Math.floor(100000 + Math.random() * 900000)}`;
     await supabase.from('service_requests').insert([{
       id: srId,
       org_id: targetOrgId,
-      site_id: targetSiteId,
       title: title,
       description: cleanBody,
       requester_phone: cleanFrom,
@@ -116,12 +117,14 @@ export default async function handler(req: Request) {
       created_at: new Date().toISOString()
     }]);
 
-    // 5. RESPOND
-    let reply = `✅ Ticket ${srId} logged for ${latestOrg.name}.`;
-    if (profile) {
-      reply = `✅ Hello ${profile.full_name}! Ticket ${srId} logged to your dashboard for ${latestOrg.name}.`;
-    } else if (isNewToOrg) {
-      reply = `✅ Welcome to ${latestOrg.name}! Ticket ${srId} logged. Since you're a new contact, an admin will verify your access shortly.`;
+    // 4. PREPARE TWILIO RESPONSE
+    let reply = "";
+    if (identifiedUser.isNew) {
+      reply = `✅ Ticket ${srId} logged for ${latestOrg.name}. Welcome! Since this is your first time, an administrator will verify your access shortly.`;
+    } else if (identifiedUser.role === 'admin' || identifiedUser.role === 'tenant') {
+      reply = `✅ Hello ${identifiedUser.name || 'Resident'}! Ticket ${srId} has been logged to the ${latestOrg.name} dashboard.`;
+    } else {
+      reply = `✅ Ticket ${srId} logged for ${latestOrg.name}. We will notify you once your contact is approved and the ticket is assigned.`;
     }
 
     return new Response(`<?xml version="1.0" encoding="UTF-8"?><Response><Message>${reply}</Message></Response>`, {
@@ -129,6 +132,7 @@ export default async function handler(req: Request) {
     });
 
   } catch (err: any) {
-    return new Response('Internal Error', { status: 500 });
+    console.error('Webhook Fatal Error:', err);
+    return new Response('Internal Server Error', { status: 500 });
   }
 }
