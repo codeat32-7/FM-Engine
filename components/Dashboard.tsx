@@ -1,7 +1,7 @@
 
-import React, { useRef } from 'react';
-import { ServiceRequest, SRStatus, SRSource, Asset, Organization, Status, Site } from '../types';
-import { MessageSquare, Plus, ArrowRight, Share2, Activity, Clock, ShieldCheck, QrCode } from 'lucide-react';
+import React from 'react';
+import { ServiceRequest, SRStatus, Asset, Organization, Status, Site } from '../types';
+import { Plus, Share2, ShieldCheck } from 'lucide-react';
 
 interface DashboardProps {
   srs: ServiceRequest[];
@@ -11,32 +11,25 @@ interface DashboardProps {
   sites?: Site[];
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ srs, onNewRequest, assets, organization, sites = [] }) => {
+const Dashboard: React.FC<DashboardProps> = ({ srs, onNewRequest, assets, organization }) => {
   const resolvedCount = srs.filter(sr => sr.status === SRStatus.RESOLVED || sr.status === SRStatus.CLOSED).length;
   const activeCount = srs.filter(sr => sr.status === SRStatus.NEW || sr.status === SRStatus.IN_PROGRESS).length;
-  const recentActivity = srs.slice(0, 5).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   
   const activeAssets = assets.filter(a => a.status === Status.ACTIVE).length;
   const uptime = assets.length > 0 ? `${((activeAssets / assets.length) * 100).toFixed(1)}%` : "0%";
 
-  // We take the first site's code for the global QR portal
-  const primarySiteCode = sites[0]?.code || 'SITE-0000';
-  
-  // Updated pre-filled text to include the Site Code automatically
-  const whatsappBase = 'https://wa.me/14155238886';
-  const sandboxJoin = 'join bad-color';
-  const prefilledBody = `Issue at ${primarySiteCode}: `;
-  const portalUrl = `${whatsappBase}?text=${encodeURIComponent(sandboxJoin + '\n\n' + prefilledBody)}`; 
+  // Clean WhatsApp Portal: No site codes, just a pure link to report.
+  const whatsappUrl = 'https://wa.me/14155238886'; 
 
   const handleShare = async () => {
-    const shareText = `*${organization?.name} Maintenance Portal*\n\nTo report an issue, click the link below and type your problem after the site code.\n\n👉 Report here: ${portalUrl}`;
+    const shareText = `*${organization?.name} Maintenance Support*\n\nReport an issue directly via WhatsApp here:\n\n👉 ${whatsappUrl}`;
     
     if (navigator.share) {
       try {
         await navigator.share({
           title: 'Report Maintenance',
           text: shareText,
-          url: portalUrl,
+          url: whatsappUrl,
         });
       } catch (err) {
         window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, '_blank');
@@ -104,7 +97,7 @@ const Dashboard: React.FC<DashboardProps> = ({ srs, onNewRequest, assets, organi
             </div>
             
             <p className="text-slate-400 text-sm md:text-base font-medium leading-relaxed max-w-sm mx-auto md:mx-0">
-              Zero friction reporting. Simply scan the QR or share this portal with your team. Site identification is automatic.
+              Zero-friction reporting. No login or training required. Share this portal with your residents to start receiving tickets instantly.
             </p>
 
             <div className="flex flex-wrap gap-3 pt-1 justify-center md:justify-start">
@@ -113,7 +106,7 @@ const Dashboard: React.FC<DashboardProps> = ({ srs, onNewRequest, assets, organi
                 className="bg-emerald-500 text-black px-6 py-3 rounded-[16px] font-black flex items-center gap-2 hover:bg-emerald-400 transition-all active:scale-95 shadow-lg shadow-emerald-500/20 group text-sm"
               >
                 <Share2 size={18} className="group-hover:rotate-12 transition-transform" /> 
-                <span>Share Access</span>
+                <span>Share Portal</span>
               </button>
             </div>
           </div>
@@ -131,45 +124,6 @@ const Dashboard: React.FC<DashboardProps> = ({ srs, onNewRequest, assets, organi
                 <p className="text-[8px] font-bold text-slate-400 uppercase tracking-tight">{organization?.name}</p>
              </div>
           </div>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden">
-        <div className="p-6 border-b border-slate-50 flex items-center justify-between">
-          <h3 className="text-lg font-black text-slate-900">Recent Activity</h3>
-          <button className="text-blue-600 font-bold text-xs hover:underline flex items-center gap-1">
-            View History <ArrowRight size={14} />
-          </button>
-        </div>
-        <div className="divide-y divide-slate-50">
-          {recentActivity.map((sr) => (
-            <div key={sr.id} className="p-5 flex items-center justify-between hover:bg-slate-50 transition-all">
-              <div className="flex items-center gap-4">
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                  sr.source === SRSource.WHATSAPP ? 'bg-emerald-50 text-emerald-600' : 'bg-blue-50 text-blue-600'
-                }`}>
-                  <MessageSquare size={18} />
-                </div>
-                <div>
-                  <p className="font-bold text-slate-800 text-sm">{sr.title}</p>
-                  <p className="text-[10px] text-slate-400 font-medium">Ticket #{sr.id} • {new Date(sr.created_at).toLocaleDateString()}</p>
-                </div>
-              </div>
-              <span className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest ${
-                sr.status === SRStatus.NEW ? 'bg-blue-100 text-blue-700' :
-                sr.status === SRStatus.IN_PROGRESS ? 'bg-amber-100 text-amber-700' :
-                sr.status === SRStatus.RESOLVED ? 'bg-emerald-100 text-emerald-700' :
-                'bg-slate-100 text-slate-500'
-              }`}>
-                {sr.status}
-              </span>
-            </div>
-          ))}
-          {recentActivity.length === 0 && (
-            <div className="p-10 text-center text-slate-400 font-medium text-sm">
-              Listening for incoming scans...
-            </div>
-          )}
         </div>
       </div>
     </div>

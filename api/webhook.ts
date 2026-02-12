@@ -25,13 +25,11 @@ export default async function handler(req: Request) {
 
     if (!body || !from) return new Response('Bad Request', { status: 400 });
 
-    // 1. Standardize Phone
+    // 1. Standardize Phone (Last 10 digits only for matching)
     const cleanFrom = from.replace(/[^0-9]/g, '');
-    // EXTRACT LAST 10 DIGITS - This is the "Zero Friction" key
     const phoneSuffix = cleanFrom.slice(-10);
 
-    // 2. Resolve Identity via Suffix Match
-    // This fixes the "+91" vs "91" vs "72..." mismatch immediately
+    // 2. Resolve Identity (Check if Admin or Tenant exists)
     let { data: profile } = await supabase
       .from('profiles')
       .select('org_id, full_name, role')
@@ -39,74 +37,65 @@ export default async function handler(req: Request) {
       .maybeSingle();
 
     let orgId = profile?.org_id;
-    let siteId: string | null = null;
 
-    // 3. HARD SELECTION (No Guessing): If unknown, look for the Site Code in the pre-filled text
+    // 3. Check if already in Approvals queue
     if (!orgId) {
-      const siteCodeMatch = body.match(/SITE-\d{4}/i);
-      if (siteCodeMatch) {
-        const code = siteCodeMatch[0].toUpperCase();
-        const { data: site } = await supabase
-          .from('sites')
-          .select('id, org_id')
-          .eq('code', code)
-          .maybeSingle();
+      const { data: existingReq } = await supabase
+        .from('requesters')
+        .select('org_id')
+        .ilike('phone', `%${phoneSuffix}`)
+        .eq('status', 'pending')
+        .maybeSingle();
+      
+      if (existingReq) orgId = existingReq.org_id;
+    }
 
-        if (site) {
-          orgId = site.org_id;
-          siteId = site.id;
-          
-          // AUTO-REGISTER: Link this phone number to this Org permanently
-          // This ensures their NEXT message doesn't need a code.
-          await supabase.from('profiles').insert([{
-            phone: cleanFrom, // Save the full number from Twilio
-            org_id: orgId,
-            role: 'tenant',
-            full_name: 'WhatsApp User'
-          }]);
-          
-          // Also add to approval queue for the admin to refine the name/unit
-          await supabase.from('requesters').upsert({
-            phone: cleanFrom,
-            org_id: orgId,
-            status: 'pending',
-            created_at: new Date().toISOString()
-          }, { onConflict: 'phone' });
-        }
+    // 4. Stranger Path (No ID, no existing request)
+    if (!orgId) {
+      // Fallback: For demo/testing, assign to the most recently created organization
+      // In a production multi-tenant app, you'd use a unique WhatsApp number per Org 
+      // or a keyword, but for this MVP we route to the latest one.
+      const { data: latestOrg } = await supabase
+        .from('organizations')
+        .select('id')
+        .order('id', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      orgId = latestOrg?.id;
+
+      if (orgId) {
+        // Create requester entry for the Admin's Approval list
+        await supabase.from('requesters').upsert({
+          phone: cleanFrom,
+          org_id: orgId,
+          status: 'pending',
+          created_at: new Date().toISOString()
+        }, { onConflict: 'phone' });
       }
     }
 
-    // 4. Final Denial (If no profile found and no site code in text)
-    if (!orgId) {
-      const errorMsg = `❌ Unrecognized Facility. 
-      
-Your number (+${cleanFrom}) is not registered. Please use the official QR code provided at your facility to report an issue.`;
-      
-      return new Response(`<?xml version="1.0" encoding="UTF-8"?><Response><Message>${errorMsg}</Message></Response>`, {
-        headers: { 'Content-Type': 'text/xml' },
-      });
-    }
+    if (!orgId) return new Response('No Org found', { status: 404 });
 
-    // 5. AI Title Generation
-    let title = body.replace(/SITE-\d{4}:?/gi, '').trim().slice(0, 40);
+    // 5. Generate Title with AI
+    let title = body.trim().slice(0, 40) || 'Maintenance Request';
     if (process.env.API_KEY && body.length > 5) {
       try {
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         const res = await ai.models.generateContent({
           model: 'gemini-3-flash-preview',
-          contents: `Summarize this maintenance request into a 3-word title (ignore site codes): "${body}"`,
+          contents: `Summarize this issue into a 3-word title: "${body}"`,
         });
         if (res.text) title = res.text.trim().replace(/[".*]/g, '');
-      } catch (e) { }
+      } catch (e) {}
     }
 
-    // 6. Log the Service Request
+    // 6. Create Service Request
     const srId = `SR-${Math.floor(100000 + Math.random() * 900000)}`;
     await supabase.from('service_requests').insert([{
       id: srId,
       org_id: orgId,
-      site_id: siteId,
-      title: title || 'Maintenance Request',
+      title: title,
       description: body,
       requester_phone: cleanFrom,
       status: 'New',
@@ -114,7 +103,9 @@ Your number (+${cleanFrom}) is not registered. Please use the official QR code p
       created_at: new Date().toISOString()
     }]);
 
-    const reply = `✅ Ticket ${srId} logged. ${profile ? `Thanks ${profile.full_name}!` : 'We have identified your facility and notified the team.'}`;
+    const reply = profile?.role === 'admin' 
+      ? `✅ Admin: Ticket ${srId} logged to your facility.`
+      : `✅ Ticket ${srId} logged. Our maintenance team has been notified.`;
 
     return new Response(`<?xml version="1.0" encoding="UTF-8"?><Response><Message>${reply}</Message></Response>`, {
       headers: { 'Content-Type': 'text/xml' },
