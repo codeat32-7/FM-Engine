@@ -11,15 +11,16 @@ interface DashboardProps {
   sites?: Site[];
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ srs, onNewRequest, assets, organization }) => {
+const Dashboard: React.FC<DashboardProps> = ({ srs, onNewRequest, assets, organization, sites = [] }) => {
   const resolvedCount = srs.filter(sr => sr.status === SRStatus.RESOLVED || sr.status === SRStatus.CLOSED).length;
   const activeCount = srs.filter(sr => sr.status === SRStatus.NEW || sr.status === SRStatus.IN_PROGRESS).length;
   
   const activeAssets = assets.filter(a => a.status === Status.ACTIVE).length;
   const uptime = assets.length > 0 ? `${((activeAssets / assets.length) * 100).toFixed(1)}%` : "0%";
 
-  // Clean WhatsApp Portal: No site codes, just a pure link to report.
-  const whatsappUrl = 'https://wa.me/14155238886'; 
+  // Simplified URL for maximum scannability and reliable demo routing
+  const whatsappUrl = `https://wa.me/14155238886?text=${encodeURIComponent('join bad-color')}`; 
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(whatsappUrl)}&ecc=M&margin=10`;
 
   const handleShare = async () => {
     const shareText = `*${organization?.name} Maintenance Support*\n\nReport an issue directly via WhatsApp here:\n\n👉 ${whatsappUrl}`;
@@ -39,14 +40,12 @@ const Dashboard: React.FC<DashboardProps> = ({ srs, onNewRequest, assets, organi
     }
   };
 
-  const qrBase64 = "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMyAzMyIgc2hhcGUtcmVuZGVyaW5nPSJjcmlzcEVkZ2VzIj48cGF0aCBmaWxsPSIjZmZmZmZmIiBkPSJNMCAwaDMzdjMzSDB6Ii8+PHBhdGggc3Ryb2tlPSIjMDAwMDAwIiBkPSJNMCAwLjVoN20xIDBoMW0yIDBoOW0zIDBoMm0xIDBoN00wIDEuNWgxbTUgMGgxbTEgMGgxbTEgMGgybTEgMGgxbTEgMGgxbTIgMGgxbTEgMGg1bTEgMGgxbTUgMGgxTTAgMi41aDFtMSAwaDNtMSAwaDFtMyAwaDJtNSAwaDFtMSAwaDFtMSAwaDRtMSAwaDFtMSAwaDNtMSAwaDFNMCAzLjVoMW0xIDBoM20xIDBoMW0xIDBoMm0xIDBoMW0yIDBoM20yIDBoNm0xIDBoMW0xIDBoM20xIDBoMU0wIDQuNWgxbTEgMGgzbTEgMGgxbTIgMGgxbTEgMGg0bTUgMGgybTEgMGgxbTIgMGgxbTEgMGgzbTEgMGgxTTAgNS41aDFtNSAwaDFtMyAwaDFtMyAwaDFtMyAwaDVtMyAwaDFtNSAwaDFNMCA2LjVoN20xIDBoMW0xIDBoMW0xIDBoMW0xIDBoMW0xIDBoMW0xIDBoMW0xIDBoMW0xIDBoMW0xIDBoMW0xIDBoN004IDcuNWgxbTIgMGgxbTEgMGgybTIgMGgxbTIgMGgxbTEgMGgzTTAgOC41aDFtMSAwaDJtMSAwaDNtNSAwaDJtMiAwaDNtMiAwaDFtMyAwaDFtMiAwaDFtMSAwaDJNMSA5LjVoMm0xIDBoMW0yIDBoMW0xIDBoMm0xIDBoMW0xIDBoM20zIDBoN20yIDBoMm0xIDBoMU0wIDEwLjVoNW0xIDBoMm0xIDBoMW0xIDBoMm0xIDBoMm0xIDBoMW0xIDBoMm0yIDBoMm0yIDBoM20xIDBoMk04IDExLjVoMW0xIDBoN20xIDBoMW01IDBoMW0xIDBoMW0xIDBoMm0yIDBoMW0yIDBoMU0zIDEyLjVoNW0xIDBoMW04IDBoMm0xIDBoMW0yIDBoM20yIDBoMW0yIDBoMU0zIDEzLjVoMW0xIDBoMW0yIDBoNG0xIDBoMW0yIDBoMW0xIDBoMW0zIDBoMW0xIDBoMW0xIDBoMm0zIDBoMU0wIDE0LjVoMm0yIDBoMW0xIDBoM202IDBoNG0zIDBoMm00IDBoMU0yIDE1LjVoNG0xIDBoMm0yIDBoMW0xIDBoMW0yIDBoNm0xIDBoMW0xIDBoNk0xIDE2LjVoMW0zIDBoNG0yIDBoMW0yIDBoM20xIDBoNG0zIDBoMm0xIDBoM20xMCAxNy41aDFtMSAwaDJtMSAwaDFtMSAwaDFtMSAwaDhtMSAwaDJtMSAwaDFNMiAxOC41aDNtMSAwaDFtMiAwaDFtMiAwaDJtMSAwaDFtMSAwaDFtNCAwaDFtMiAwaDFtMiAwaDFtMSAwaDJNMCAxOS41aDFtMiAwaDJtMiAwaDFtMSAwaDFtMSAwaDRtNSAwaDJtMSAwaDJtMiAwaDJtMyAwaDFNMCAyMC41aDFtMSAwaDFtMiAwaDRtMSAwaDFtMyAwaDJtMiAwaDFtMSAwaDFtMiAwaDJtMSAwaDFtMSAwaDNtMSAwaDFNMCAyMS41aDNtMiAwaDFtMiAwaDFtMSAwaDNtMiAwaDFtMSAwaDJtNiAwaDFtMiAwaDFtMSAwaDFtMSAwaDFNMiAyMi41aDJtMSAwaDNtNSAwaDJtMSAwaDJtNCAwaDFtMyAwaDFtMSAwaDJtMSAwaDJNMSAyMy41aDFtMSAwaDFtMyAwaDNtMSAwaDJtMyAwaDJtMSAwaDFtMSAwaDJtNSAwaDVNMCAyNC41aDFtMSAwaDFtMSAwaDNtMSAwaDFtMyAwaDFtMSAwaDJtNCAwaDJtMSAwaDZtMSAwaDNNOCAyNS41aDFtMSAwaDJtMSAwaDVtMiAwaDFtMiAwaDJtMyAwaDJtMSAwaDJNMCAyNi41aDdtMSAwaDFtMyAwaDFtMiAwaDJtMiAwaDFtMiAwaDNtMSAwaDFtMSAwaDFtMyAwaDFNMCAyNy41aDFtNSAwaDFtMSAwaDFtMSAwaDFtMyAwaDJtMyAwaDFtMSAwaDRtMyAwaDFtMSAwaDFtMSAwaDFNMCAyOC41aDFtMSAwaDNtMSAwaDFtMiAwaDRtMSAwaDFtMiAwaDFtMSAwaDJtMiAwaDZtMSAwaDFtMSAwaDFNMCAyOS41aDFtMSAwaDNtMSAwaDFtMSAwaDFtMSAwaDFtMSAwaDFtNCAwaDVtMiAwaDJtMyAwaDFtMSAwaDFNMCAzMC41aDFtMSAwaDNtMSAwaDFtMSAwaDFtMSAwaDFtMSAwaDNtMiAwaDNtMSAwaDNtMiAwaDJtMiAwaDFNMCAzMS41aDFtNSAwaDFtNSAwaDJtMSAwaDJtMiAwaDFtMSAwaDJtMiAwaDFtMiAwaDFtMSAwaDFtMSAwaDFNMCAzMi41aDdtMSAwaDNtMSAwaDRtMSAwaDJtMyAwaDUiLz48L3N2Zz4=";
-
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <h2 className="text-3xl font-black text-slate-900 tracking-tight">Overview</h2>
-          <p className="text-slate-500 font-medium">Facility performance at a glance.</p>
+          <p className="text-slate-500 font-medium text-sm">Facility performance & intake status.</p>
         </div>
         <button 
           onClick={onNewRequest}
@@ -97,7 +96,7 @@ const Dashboard: React.FC<DashboardProps> = ({ srs, onNewRequest, assets, organi
             </div>
             
             <p className="text-slate-400 text-sm md:text-base font-medium leading-relaxed max-w-sm mx-auto md:mx-0">
-              Zero-friction reporting. No login or training required. Share this portal with your residents to start receiving tickets instantly.
+              Zero-friction reporting. Scanning this QR allows any resident to instantly report an issue. Tickets are automatically routed to your dashboard for triage.
             </p>
 
             <div className="flex flex-wrap gap-3 pt-1 justify-center md:justify-start">
@@ -112,11 +111,12 @@ const Dashboard: React.FC<DashboardProps> = ({ srs, onNewRequest, assets, organi
           </div>
           
           <div className="bg-white p-6 md:p-8 rounded-[40px] flex flex-col items-center gap-4 text-center shadow-3xl transform hover:scale-[1.02] transition-transform duration-500 shrink-0">
-             <div className="w-36 h-36 md:w-44 md:h-44 bg-white rounded-2xl flex items-center justify-center p-1 relative overflow-hidden">
+             <div className="w-40 h-40 md:w-56 md:h-56 bg-white rounded-2xl flex items-center justify-center p-2 relative overflow-hidden border border-slate-100 shadow-inner">
                 <img 
-                  src={`data:image/svg+xml;base64,${qrBase64}`} 
+                  src={qrUrl} 
                   alt="WhatsApp QR Code"
                   className="w-full h-full object-contain"
+                  loading="lazy"
                 />
              </div>
              <div className="space-y-0.5">

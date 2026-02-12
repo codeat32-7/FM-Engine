@@ -25,93 +25,98 @@ export default async function handler(req: Request) {
 
     if (!body || !from) return new Response('Bad Request', { status: 400 });
 
-    // 1. Standardize Phone (Last 10 digits only for matching)
     const cleanFrom = from.replace(/[^0-9]/g, '');
     const phoneSuffix = cleanFrom.slice(-10);
 
-    // 2. Resolve Identity (Check if Admin or Tenant exists)
-    let { data: profile } = await supabase
+    // STEP 1: IDENTIFY THE TARGET ORGANIZATION (Demo Logic: Use Most Recently Created)
+    const { data: latestOrg } = await supabase
+      .from('organizations')
+      .select('id, name')
+      .order('id', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!latestOrg) return new Response('No Organization found', { status: 404 });
+    const targetOrgId = latestOrg.id;
+
+    // STEP 2: USER IDENTIFICATION WITHIN THIS ORG
+    
+    // Check if they are already an Admin or Tenant (Profile)
+    const { data: profile } = await supabase
       .from('profiles')
-      .select('org_id, full_name, role')
+      .select('id, full_name, role')
+      .eq('org_id', targetOrgId)
       .ilike('phone', `%${phoneSuffix}`)
       .maybeSingle();
 
-    let orgId = profile?.org_id;
+    let isNewRequester = false;
 
-    // 3. Check if already in Approvals queue
-    if (!orgId) {
-      const { data: existingReq } = await supabase
+    if (!profile) {
+      // Not a profile, check if they are already a known Requester
+      const { data: requester } = await supabase
         .from('requesters')
-        .select('org_id')
+        .select('id, status')
+        .eq('org_id', targetOrgId)
         .ilike('phone', `%${phoneSuffix}`)
-        .eq('status', 'pending')
-        .maybeSingle();
-      
-      if (existingReq) orgId = existingReq.org_id;
-    }
-
-    // 4. Stranger Path (No ID, no existing request)
-    if (!orgId) {
-      // Fallback: For demo/testing, assign to the most recently created organization
-      // In a production multi-tenant app, you'd use a unique WhatsApp number per Org 
-      // or a keyword, but for this MVP we route to the latest one.
-      const { data: latestOrg } = await supabase
-        .from('organizations')
-        .select('id')
-        .order('id', { ascending: false })
-        .limit(1)
         .maybeSingle();
 
-      orgId = latestOrg?.id;
-
-      if (orgId) {
-        // Create requester entry for the Admin's Approval list
-        await supabase.from('requesters').upsert({
+      if (!requester) {
+        // Brand new contact for this org - create approval entry
+        await supabase.from('requesters').insert([{
           phone: cleanFrom,
-          org_id: orgId,
+          org_id: targetOrgId,
           status: 'pending',
           created_at: new Date().toISOString()
-        }, { onConflict: 'phone' });
+        }]);
+        isNewRequester = true;
       }
     }
 
-    if (!orgId) return new Response('No Org found', { status: 404 });
-
-    // 5. Generate Title with AI
-    let title = body.trim().slice(0, 40) || 'Maintenance Request';
-    if (process.env.API_KEY && body.length > 5) {
+    // STEP 3: LOG THE SERVICE REQUEST
+    // Clean Twilio sandbox keywords
+    const cleanBody = body.replace(/join\s+[a-z-]+\s*/gi, '').trim();
+    let title = cleanBody.slice(0, 40) || 'Maintenance Request';
+    
+    // AI Title Generation (Optional Enhancement)
+    if (process.env.API_KEY && cleanBody.length > 5) {
       try {
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         const res = await ai.models.generateContent({
           model: 'gemini-3-flash-preview',
-          contents: `Summarize this issue into a 3-word title: "${body}"`,
+          contents: `Provide a 3-word title for this maintenance issue: "${cleanBody}"`,
         });
         if (res.text) title = res.text.trim().replace(/[".*]/g, '');
       } catch (e) {}
     }
 
-    // 6. Create Service Request
     const srId = `SR-${Math.floor(100000 + Math.random() * 900000)}`;
     await supabase.from('service_requests').insert([{
       id: srId,
-      org_id: orgId,
+      org_id: targetOrgId,
       title: title,
-      description: body,
+      description: cleanBody,
       requester_phone: cleanFrom,
       status: 'New',
       source: 'WhatsApp',
       created_at: new Date().toISOString()
     }]);
 
-    const reply = profile?.role === 'admin' 
-      ? `✅ Admin: Ticket ${srId} logged to your facility.`
-      : `✅ Ticket ${srId} logged. Our maintenance team has been notified.`;
+    // STEP 4: RESPONSE MESSAGE
+    let reply = "";
+    if (profile) {
+      reply = `✅ Hello ${profile.full_name}! Ticket ${srId} logged to your dashboard for ${latestOrg.name}.`;
+    } else if (isNewRequester) {
+      reply = `✅ Welcome! Ticket ${srId} logged for ${latestOrg.name}. Since this is your first time, an administrator needs to approve your contact.`;
+    } else {
+      reply = `✅ Ticket ${srId} logged for ${latestOrg.name}. We'll notify you once it's picked up.`;
+    }
 
     return new Response(`<?xml version="1.0" encoding="UTF-8"?><Response><Message>${reply}</Message></Response>`, {
       headers: { 'Content-Type': 'text/xml' },
     });
 
   } catch (err: any) {
-    return new Response('Error', { status: 500 });
+    console.error('Webhook Error:', err);
+    return new Response('Internal Error', { status: 500 });
   }
 }
