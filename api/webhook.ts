@@ -11,7 +11,7 @@ export default async function handler(req: Request) {
     return new Response('Method Not Allowed', { status: 405 });
   }
 
-  // Use Service Role key to bypass RLS for webhook logic
+  // Initialize Supabase with Service Role to ensure we can search across the database
   const supabase = createClient(
     process.env.SUPABASE_URL || '',
     process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || ''
@@ -26,72 +26,95 @@ export default async function handler(req: Request) {
 
     if (!body || !from) return new Response('Bad Request', { status: 400 });
 
-    const cleanFrom = from.replace(/[^0-9]/g, '');
-    const phoneSuffix = cleanFrom.slice(-10);
+    // STEP 1: EXTRACT AND NORMALIZE PHONE NUMBER
+    // Extract digits and take the last 10 digits
+    const rawDigits = from.replace(/[^0-9]/g, '');
+    const phoneSuffix = rawDigits.slice(-10);
 
-    // 1. SELECT THE LATEST ORGANIZATION (Demo Scope)
-    const { data: latestOrg, error: orgError } = await supabase
-      .from('organizations')
-      .select('id, name')
-      .order('id', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    let targetOrgId: string | null = null;
+    let identifiedUserType: 'profile' | 'tenant' | 'requester' | 'new' = 'new';
+    let userName = '';
 
-    if (orgError || !latestOrg) {
-      console.error('Org Error:', orgError);
-      return new Response('No organization found.', { status: 500 });
-    }
-
-    const targetOrgId = latestOrg.id;
-
-    // 2. IDENTIFY SENDER WITHIN THIS SPECIFIC ORGANIZATION
-    let identifiedUser: { name?: string; role?: string; isNew: boolean } = { isNew: false };
-
-    // A. Search in Profiles for Admin/Tenant within this org
+    // STEP 2: CHECK PROFILES TABLE
     const { data: profile } = await supabase
       .from('profiles')
-      .select('id, full_name, role')
-      .eq('org_id', targetOrgId)
+      .select('org_id, full_name')
       .ilike('phone', `%${phoneSuffix}`)
       .maybeSingle();
 
-    if (profile) {
-      identifiedUser = { 
-        name: profile.full_name, 
-        role: profile.role, 
-        isNew: false 
-      };
-    } else {
-      // B. Search in Requesters table for this org
-      const { data: requester } = await supabase
-        .from('requesters')
-        .select('id, status')
-        .eq('org_id', targetOrgId)
+    if (profile && profile.org_id) {
+      targetOrgId = profile.org_id;
+      identifiedUserType = 'profile';
+      userName = profile.full_name || '';
+    }
+
+    // STEP 3: IF NOT FOUND, CHECK TENANT TABLE
+    if (!targetOrgId) {
+      const { data: tenant } = await supabase
+        .from('tenants')
+        .select('org_id, name')
         .ilike('phone', `%${phoneSuffix}`)
         .maybeSingle();
 
-      if (requester) {
-        identifiedUser = { 
-          role: 'requester', 
-          isNew: false 
-        };
-      } else {
-        // C. Completely new contact -> Create Requester record (Approval)
-        await supabase.from('requesters').insert([{
-          phone: cleanFrom,
-          org_id: targetOrgId,
-          status: 'pending',
-          created_at: new Date().toISOString()
-        }]);
-        identifiedUser = { isNew: true };
+      if (tenant && tenant.org_id) {
+        targetOrgId = tenant.org_id;
+        identifiedUserType = 'tenant';
+        userName = tenant.name || '';
       }
     }
 
-    // 3. LOG THE SERVICE REQUEST
+    // STEP 4: IF NOT FOUND, CHECK REQUESTER TABLE
+    if (!targetOrgId) {
+      const { data: requester } = await supabase
+        .from('requesters')
+        .select('org_id')
+        .ilike('phone', `%${phoneSuffix}`)
+        .maybeSingle();
+
+      if (requester && requester.org_id) {
+        targetOrgId = requester.org_id;
+        identifiedUserType = 'requester';
+      }
+    }
+
+    // STEP 5: IF NO MATCH EXISTS IN ANY TABLE
+    if (!targetOrgId) {
+      // Retrieve the most recently created Organization
+      const { data: latestOrg } = await supabase
+        .from('organizations')
+        .select('id, name')
+        .order('id', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (!latestOrg) {
+        return new Response('Configuration Error: No organizations exist.', { status: 500 });
+      }
+
+      targetOrgId = latestOrg.id;
+      identifiedUserType = 'new';
+
+      // Create a new Requester record (Acts as the approval record)
+      await supabase.from('requesters').insert([{
+        phone: rawDigits, // Store the full number for Twilio replies
+        org_id: targetOrgId,
+        status: 'pending',
+        created_at: new Date().toISOString()
+      }]);
+    }
+
+    // GET ORG NAME FOR RESPONSE
+    const { data: orgInfo } = await supabase
+      .from('organizations')
+      .select('name')
+      .eq('id', targetOrgId)
+      .single();
+
+    // LOG THE SERVICE REQUEST
     const cleanBody = body.replace(/join\s+[a-z-]+\s*/gi, '').trim();
     let title = cleanBody.slice(0, 40) || 'Maintenance Request';
     
-    // AI Title Generation (Gemini 3 Flash)
+    // AI Title Generation
     if (process.env.API_KEY && cleanBody.length > 5) {
       try {
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -101,7 +124,7 @@ export default async function handler(req: Request) {
         });
         if (res.text) title = res.text.trim().replace(/[".*]/g, '');
       } catch (e) {
-        console.error('AI Title Failure:', e);
+        console.error('AI Processing Error:', e);
       }
     }
 
@@ -111,20 +134,21 @@ export default async function handler(req: Request) {
       org_id: targetOrgId,
       title: title,
       description: cleanBody,
-      requester_phone: cleanFrom,
+      requester_phone: from,
       status: 'New',
       source: 'WhatsApp',
       created_at: new Date().toISOString()
     }]);
 
-    // 4. PREPARE TWILIO RESPONSE
-    let reply = "";
-    if (identifiedUser.isNew) {
-      reply = `✅ Ticket ${srId} logged for ${latestOrg.name}. Welcome! Since this is your first time, an administrator will verify your access shortly.`;
-    } else if (identifiedUser.role === 'admin' || identifiedUser.role === 'tenant') {
-      reply = `✅ Hello ${identifiedUser.name || 'Resident'}! Ticket ${srId} has been logged to the ${latestOrg.name} dashboard.`;
-    } else {
-      reply = `✅ Ticket ${srId} logged for ${latestOrg.name}. We will notify you once your contact is approved and the ticket is assigned.`;
+    // PREPARE TWILIO RESPONSE
+    let reply = `✅ Ticket ${srId} logged for ${orgInfo?.name || 'Facility'}.`;
+    
+    if (identifiedUserType === 'new') {
+      reply = `✅ Welcome! Ticket ${srId} logged for ${orgInfo?.name}. As you are a new contact, an administrator will verify your access shortly.`;
+    } else if (identifiedUserType === 'profile' || identifiedUserType === 'tenant') {
+      reply = `✅ Hello ${userName || 'Resident'}! Ticket ${srId} has been logged to the ${orgInfo?.name} dashboard.`;
+    } else if (identifiedUserType === 'requester') {
+      reply = `✅ Ticket ${srId} logged for ${orgInfo?.name}. Note: Your contact is still pending administrator approval.`;
     }
 
     return new Response(`<?xml version="1.0" encoding="UTF-8"?><Response><Message>${reply}</Message></Response>`, {
@@ -132,7 +156,7 @@ export default async function handler(req: Request) {
     });
 
   } catch (err: any) {
-    console.error('Webhook Fatal Error:', err);
+    console.error('Webhook Runtime Error:', err);
     return new Response('Internal Server Error', { status: 500 });
   }
 }
