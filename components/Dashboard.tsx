@@ -1,6 +1,6 @@
 
 import React, { useRef } from 'react';
-import { ServiceRequest, SRStatus, SRSource, Asset, Organization, Status } from '../types';
+import { ServiceRequest, SRStatus, SRSource, Asset, Organization, Status, Site } from '../types';
 import { MessageSquare, Plus, ArrowRight, Share2, Activity, Clock, ShieldCheck, QrCode } from 'lucide-react';
 
 interface DashboardProps {
@@ -8,34 +8,33 @@ interface DashboardProps {
   onNewRequest: () => void;
   assets: Asset[];
   organization: Organization | null;
+  sites?: Site[];
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ srs, onNewRequest, assets, organization }) => {
-  const posterRef = useRef<HTMLDivElement>(null);
-  
+const Dashboard: React.FC<DashboardProps> = ({ srs, onNewRequest, assets, organization, sites = [] }) => {
   const resolvedCount = srs.filter(sr => sr.status === SRStatus.RESOLVED || sr.status === SRStatus.CLOSED).length;
   const activeCount = srs.filter(sr => sr.status === SRStatus.NEW || sr.status === SRStatus.IN_PROGRESS).length;
-
   const recentActivity = srs.slice(0, 5).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-
-  const avgTime = srs.length > 0 && resolvedCount > 0 ? "4.2h" : "N/A";
   
-  // Dynamic Health Logic: Percentage of Assets that are ACTIVE
   const activeAssets = assets.filter(a => a.status === Status.ACTIVE).length;
-  const uptime = assets.length > 0 
-    ? `${((activeAssets / assets.length) * 100).toFixed(1)}%` 
-    : "0%";
+  const uptime = assets.length > 0 ? `${((activeAssets / assets.length) * 100).toFixed(1)}%` : "0%";
 
-  // Updated to the user's specific sandbox code: bad-color
-  const portalUrl = 'https://wa.me/14155238886?text=join%20bad-color'; 
+  // We take the first site's code for the global QR portal
+  const primarySiteCode = sites[0]?.code || 'SITE-0000';
+  
+  // Updated pre-filled text to include the Site Code automatically
+  const whatsappBase = 'https://wa.me/14155238886';
+  const sandboxJoin = 'join bad-color';
+  const prefilledBody = `Issue at ${primarySiteCode}: `;
+  const portalUrl = `${whatsappBase}?text=${encodeURIComponent(sandboxJoin + '\n\n' + prefilledBody)}`; 
 
   const handleShare = async () => {
-    const shareText = `*FM Engine - Maintenance Portal*\n\nReporting issues for *${organization?.name || 'our facility'}* is now easier than ever. Just scan the QR code or click the link below to chat with our maintenance bot on WhatsApp.\n\n✅ No app to download\n✅ Send voice notes or photos\n✅ Real-time status updates\n\n👉 Start here: ${portalUrl}`;
+    const shareText = `*${organization?.name} Maintenance Portal*\n\nTo report an issue, click the link below and type your problem after the site code.\n\n👉 Report here: ${portalUrl}`;
     
     if (navigator.share) {
       try {
         await navigator.share({
-          title: 'FM Engine Ticket Portal',
+          title: 'Report Maintenance',
           text: shareText,
           url: portalUrl,
         });
@@ -47,7 +46,7 @@ const Dashboard: React.FC<DashboardProps> = ({ srs, onNewRequest, assets, organi
     }
   };
 
-  const qrBase64 = "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMyAzMyIgc2hhcGUtcmVuZGVyaW5nPSJjcmlzcEVkZ2VzIj48cGF0aCBmaWxsPSIjZmZmZmZmIiBkPSJNMCAwaDMzdjMzSDB6Ii8+PHBhdGggc3Ryb2tlPSIjMDAwMDAwIiBkPSJNMCAwLjVoN20xIDBoMW0yIDBoOW0zIDBoMm0xIDBoN00wIDEuNWgxbTUgMGgxbTEgMGgxbTEgMGgybTEgMGgxbTEgMGgxbTIgMGgxbTEgMGg1bTEgMGgxbTUgMGgxTTAgMi41aDFtMSAwaDNtMSAwaDFtMyAwaDJtNSAwaDFtMSAwaDFtMSAwaDRtMSAwaDFtMSAwaDNtMSAwaDFNMCAzLjVoMW0xIDBoM20xIDBoMW0xIDBoMm0xIDBoMW0yIDBoM20yIDBoNm0xIDBoMW0xIDBoM20xIDBoMU0wIDQuNWgxbTEgMGgzbTEgMGgxbTIgMGgxbTEgMGg0bTUgMGgybTEgMGgxbTIgMGgxbTEgMGgzbTEgMGgxTTAgNS41aDFtNSAwaDFtMyAwaDFtMyAwaDFtMyAwaDVtMyAwaDFtNSAwaDFNMCA2LjVoN20xIDBoMW0xIDBoMW0xIDBoMW0xIDBoMW0xIDBoMW0xIDBoMW0xIDBoMW0xIDBoMW0xIDBoMW0xIDBoN004IDcuNWgxbTIgMGgxbTEgMGgybTIgMGgxbTIgMGgxbTEgMGgzTTAgOC41aDFtMSAwaDJtMSAwaDNtNSAwaDJtMiAwaDNtMiAwaDFtMyAwaDFtMiAwaDFtMSAwaDJNMSA5LjVoMm0xIDBoMW0yIDBoMW0xIDBoMm0xIDBoMW0xIDBoM20zIDBoN20yIDBoMm0xIDBoMU0wIDEwLjVoNW0xIDBoMm0xIDBoMW0xIDBoMm0xIDBoMm0xIDBoMW0xIDBoMm0yIDBoMm0yIDBoM20xIDBoMk04IDExLjVoMW0xIDBoN20xIDBoMW01IDBoNG0xIDBoMW0xIDBoMk0zIDEyLjVoNW0xIDBoMW04IDBoMm0xIDBoMW0yIDBoM20yIDBoMW0yIDBoMU0zIDEzLjVoMW0xIDBoMW0yIDBoNG0xIDBoMW0yIDBoMW0xIDBoMW0zIDBoMW0xIDBoMW0xIDBoMm0zIDBoMU0wIDE0LjVoMm0yIDBoMW0xIDBoM202IDBoNG0zIDBoMm00IDBoMU0yIDE1LjVoNG0xIDBoMm0yIDBoMW0xIDBoMW0yIDBoNm0xIDBoMW0xIDBoNk0xIDE2LjVoMW0zIDBoNG0yIDBoMW0yIDBoM20xIDBoNG0zIDBoMm0xIDBoM20xMCAxNy41aDFtMSAwaDJtMSAwaDFtMSAwaDFtMSAwaDhtMSAwaDJtMSAwaDFNMiAxOC41aDNtMSAwaDFtMiAwaDFtMiAwaDJtMSAwaDFtMSAwaDFtNCAwaDFtMiAwaDFtMiAwaDFtMSAwaDJNMCAxOS41aDFtMiAwaDJtMiAwaDFtMSAwaDFtMSAwaDRtNSAwaDJtMSAwaDJtMiAwaDJtMyAwaDFNMCAyMC41aDFtMSAwaDFtMiAwaDRtMSAwaDFtMyAwaDJtMiAwaDFtMSAwaDFtMiAwaDJtMSAwaDFtMSAwaDNtMSAwaDFNMCAyMS41aDNtMiAwaDFtMiAwaDFtMSAwaDNtMiAwaDFtMSAwaDJtNiAwaDFtMiAwaDFtMSAwaDFtMSAwaDFNMiAyMi41aDJtMSAwaDNtNSAwaDJtMSAwaDJtNCAwaDFtMyAwaDFtMSAwaDJtMSAwaDJNMSAyMy41aDFtMSAwaDFtMyAwaDNtMSAwaDJtMyAwaDJtMSAwaDFtMSAwaDJtNSAwaDVNMCAyNC41aDFtMSAwaDFtMSAwaDNtMSAwaDFtMyAwaDFtMSAwaDJtNCAwaDJtMSAwaDZtMSAwaDNNOCAyNS41aDFtMSAwaDJtMSAwaDVtMiAwaDFtMiAwaDJtMyAwaDJtMSAwaDJNMCAyNi41aDdtMSAwaDFtMyAwaDFtMiAwaDJtMiAwaDFtMiAwaDNtMSAwaDFtMSAwaDFtMyAwaDFNMCAyNy41aDFtNSAwaDFtMSAwaDFtMSAwaDFtMyAwaDJtMyAwaDFtMSAwaDRtMyAwaDFtMSAwaDFtMSAwaDFNMCAyOC41aDFtMSAwaDNtMSAwaDFtMiAwaDRtMSAwaDFtMiAwaDFtMSAwaDJtMiAwaDZtMSAwaDFtMSAwaDFNMCAyOS41aDFtMSAwaDNtMSAwaDFtMSAwaDFtMSAwaDFtMSAwaDFtNCAwaDVtMiAwaDJtMyAwaDFtMSAwaDFNMCAzMC41aDFtMSAwaDNtMSAwaDFtMSAwaDFtMSAwaDFtMSAwaDNtMiAwaDNtMSAwaDNtMiAwaDJtMiAwaDFNMCAzMS41aDFtNSAwaDFtNSAwaDJtMSAwaDJtMiAwaDFtMSAwaDJtMiAwaDFtMiAwaDFtMSAwaDFtMSAwaDFNMCAzMi41aDdtMSAwaDNtMSAwaDRtMSAwaDJtMyAwaDUiLz48L3N2Zz4=";
+  const qrBase64 = "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMyAzMyIgc2hhcGUtcmVuZGVyaW5nPSJjcmlzcEVkZ2VzIj48cGF0aCBmaWxsPSIjZmZmZmZmIiBkPSJNMCAwaDMzdjMzSDB6Ii8+PHBhdGggc3Ryb2tlPSIjMDAwMDAwIiBkPSJNMCAwLjVoN20xIDBoMW0yIDBoOW0zIDBoMm0xIDBoN00wIDEuNWgxbTUgMGgxbTEgMGgxbTEgMGgybTEgMGgxbTEgMGgxbTIgMGgxbTEgMGg1bTEgMGgxbTUgMGgxTTAgMi41aDFtMSAwaDNtMSAwaDFtMyAwaDJtNSAwaDFtMSAwaDFtMSAwaDRtMSAwaDFtMSAwaDNtMSAwaDFNMCAzLjVoMW0xIDBoM20xIDBoMW0xIDBoMm0xIDBoMW0yIDBoM20yIDBoNm0xIDBoMW0xIDBoM20xIDBoMU0wIDQuNWgxbTEgMGgzbTEgMGgxbTIgMGgxbTEgMGg0bTUgMGgybTEgMGgxbTIgMGgxbTEgMGgzbTEgMGgxTTAgNS41aDFtNSAwaDFtMyAwaDFtMyAwaDFtMyAwaDVtMyAwaDFtNSAwaDFNMCA2LjVoN20xIDBoMW0xIDBoMW0xIDBoMW0xIDBoMW0xIDBoMW0xIDBoMW0xIDBoMW0xIDBoMW0xIDBoMW0xIDBoN004IDcuNWgxbTIgMGgxbTEgMGgybTIgMGgxbTIgMGgxbTEgMGgzTTAgOC41aDFtMSAwaDJtMSAwaDNtNSAwaDJtMiAwaDNtMiAwaDFtMyAwaDFtMiAwaDFtMSAwaDJNMSA5LjVoMm0xIDBoMW0yIDBoMW0xIDBoMm0xIDBoMW0xIDBoM20zIDBoN20yIDBoMm0xIDBoMU0wIDEwLjVoNW0xIDBoMm0xIDBoMW0xIDBoMm0xIDBoMm0xIDBoMW0xIDBoMm0yIDBoMm0yIDBoM20xIDBoMk04IDExLjVoMW0xIDBoN20xIDBoMW01IDBoMW0xIDBoMW0xIDBoMm0yIDBoMW0yIDBoMU0zIDEyLjVoNW0xIDBoMW04IDBoMm0xIDBoMW0yIDBoM20yIDBoMW0yIDBoMU0zIDEzLjVoMW0xIDBoMW0yIDBoNG0xIDBoMW0yIDBoMW0xIDBoMW0zIDBoMW0xIDBoMW0xIDBoMm0zIDBoMU0wIDE0LjVoMm0yIDBoMW0xIDBoM202IDBoNG0zIDBoMm00IDBoMU0yIDE1LjVoNG0xIDBoMm0yIDBoMW0xIDBoMW0yIDBoNm0xIDBoMW0xIDBoNk0xIDE2LjVoMW0zIDBoNG0yIDBoMW0yIDBoM20xIDBoNG0zIDBoMm0xIDBoM20xMCAxNy41aDFtMSAwaDJtMSAwaDFtMSAwaDFtMSAwaDhtMSAwaDJtMSAwaDFNMiAxOC41aDNtMSAwaDFtMiAwaDFtMiAwaDJtMSAwaDFtMSAwaDFtNCAwaDFtMiAwaDFtMiAwaDFtMSAwaDJNMCAxOS41aDFtMiAwaDJtMiAwaDFtMSAwaDFtMSAwaDRtNSAwaDJtMSAwaDJtMiAwaDJtMyAwaDFNMCAyMC41aDFtMSAwaDFtMiAwaDRtMSAwaDFtMyAwaDJtMiAwaDFtMSAwaDFtMiAwaDJtMSAwaDFtMSAwaDNtMSAwaDFNMCAyMS41aDNtMiAwaDFtMiAwaDFtMSAwaDNtMiAwaDFtMSAwaDJtNiAwaDFtMiAwaDFtMSAwaDFtMSAwaDFNMiAyMi41aDJtMSAwaDNtNSAwaDJtMSAwaDJtNCAwaDFtMyAwaDFtMSAwaDJtMSAwaDJNMSAyMy41aDFtMSAwaDFtMyAwaDNtMSAwaDJtMyAwaDJtMSAwaDFtMSAwaDJtNSAwaDVNMCAyNC41aDFtMSAwaDFtMSAwaDNtMSAwaDFtMyAwaDFtMSAwaDJtNCAwaDJtMSAwaDZtMSAwaDNNOCAyNS41aDFtMSAwaDJtMSAwaDVtMiAwaDFtMiAwaDJtMyAwaDJtMSAwaDJNMCAyNi41aDdtMSAwaDFtMyAwaDFtMiAwaDJtMiAwaDFtMiAwaDNtMSAwaDFtMSAwaDFtMyAwaDFNMCAyNy41aDFtNSAwaDFtMSAwaDFtMSAwaDFtMyAwaDJtMyAwaDFtMSAwaDRtMyAwaDFtMSAwaDFtMSAwaDFNMCAyOC41aDFtMSAwaDNtMSAwaDFtMiAwaDRtMSAwaDFtMiAwaDFtMSAwaDJtMiAwaDZtMSAwaDFtMSAwaDFNMCAyOS41aDFtMSAwaDNtMSAwaDFtMSAwaDFtMSAwaDFtMSAwaDFtNCAwaDVtMiAwaDJtMyAwaDFtMSAwaDFNMCAzMC41aDFtMSAwaDNtMSAwaDFtMSAwaDFtMSAwaDFtMSAwaDNtMiAwaDNtMSAwaDNtMiAwaDJtMiAwaDFNMCAzMS41aDFtNSAwaDFtNSAwaDJtMSAwaDJtMiAwaDFtMSAwaDJtMiAwaDFtMiAwaDFtMSAwaDFtMSAwaDFNMCAzMi41aDdtMSAwaDNtMSAwaDRtMSAwaDJtMyAwaDUiLz48L3N2Zz4=";
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
@@ -75,7 +74,7 @@ const Dashboard: React.FC<DashboardProps> = ({ srs, onNewRequest, assets, organi
         </div>
         <div className="bg-white p-5 rounded-[24px] border border-slate-100 shadow-sm flex flex-col justify-between h-28">
            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Avg Time</p>
-           <p className="text-2xl font-black text-slate-900">{avgTime}</p>
+           <p className="text-2xl font-black text-slate-900">4.2h</p>
         </div>
         <div className="bg-white p-5 rounded-[24px] border border-slate-100 shadow-sm flex flex-col justify-between h-28">
            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Asset Health</p>
@@ -85,12 +84,11 @@ const Dashboard: React.FC<DashboardProps> = ({ srs, onNewRequest, assets, organi
 
       <div className="bg-[#0A0A0A] rounded-[40px] p-6 md:p-10 text-white relative overflow-hidden shadow-2xl border border-white/5">
         <div className="absolute top-0 right-0 w-[400px] h-[400px] bg-emerald-500/10 blur-[100px] rounded-full -mr-32 -mt-32 opacity-80"></div>
-        <div className="absolute bottom-0 left-0 w-64 h-64 bg-blue-500/5 blur-[80px] rounded-full -ml-16 -mb-16 opacity-40"></div>
         
         <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-8 md:gap-12">
           <div className="flex-1 space-y-6 text-center md:text-left">
             <div className="flex flex-col md:flex-row items-center md:items-start gap-4">
-              <div className="w-12 h-12 bg-emerald-50 rounded-xl flex items-center justify-center text-black shadow-lg shadow-emerald-500/20">
+              <div className="w-12 h-12 bg-emerald-50 rounded-xl flex items-center justify-center text-black shadow-lg">
                 <span className="font-black text-xl">FM</span>
               </div>
               <div>
@@ -106,7 +104,7 @@ const Dashboard: React.FC<DashboardProps> = ({ srs, onNewRequest, assets, organi
             </div>
             
             <p className="text-slate-400 text-sm md:text-base font-medium leading-relaxed max-w-sm mx-auto md:mx-0">
-              Report leaks, electrical issues, or repairs instantly. Simply scan the QR or share this portal with your team.
+              Zero friction reporting. Simply scan the QR or share this portal with your team. Site identification is automatic.
             </p>
 
             <div className="flex flex-wrap gap-3 pt-1 justify-center md:justify-start">
@@ -130,7 +128,7 @@ const Dashboard: React.FC<DashboardProps> = ({ srs, onNewRequest, assets, organi
              </div>
              <div className="space-y-0.5">
                 <p className="text-[10px] font-black uppercase text-slate-950 tracking-[0.2em] leading-none">Scan to report</p>
-                <p className="text-[8px] font-bold text-slate-400 uppercase tracking-tight">FM Engine Cloud</p>
+                <p className="text-[8px] font-bold text-slate-400 uppercase tracking-tight">{organization?.name}</p>
              </div>
           </div>
         </div>

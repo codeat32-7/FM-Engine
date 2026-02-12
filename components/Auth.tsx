@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { MessageSquare, ArrowRight, Loader2, AlertCircle, ShieldCheck, Building, UserCircle, ChevronRight } from 'lucide-react';
+import { MessageSquare, ArrowRight, Loader2, AlertCircle, ShieldCheck, Building, UserCircle, ChevronRight, Globe } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { UserProfile } from '../types';
 
@@ -27,16 +27,16 @@ const Auth: React.FC<AuthProps> = ({ onSignIn }) => {
     try {
       const cleanPhone = phone.replace(/[^0-9]/g, '');
       
-      // 1. Scan entire profiles table for this phone number
+      // We look for a profile where the saved phone matches the suffix of what was entered
+      // to handle cases where users might forget the country code or enter it differently.
       const { data: profiles, error: profErr } = await supabase
         .from('profiles')
         .select('*, organizations(name)')
-        .eq('phone', cleanPhone);
+        .like('phone', `%${cleanPhone.slice(-10)}`);
 
       if (profErr) throw profErr;
 
       if (profiles && profiles.length > 0) {
-        // Map the joined organization name for display
         const mappedProfiles: ProfileWithOrg[] = profiles.map(p => ({
           id: p.id,
           org_id: p.org_id,
@@ -48,15 +48,13 @@ const Auth: React.FC<AuthProps> = ({ onSignIn }) => {
         }));
 
         if (mappedProfiles.length === 1) {
-          // Only one context found, log in directly
           onSignIn(mappedProfiles[0]);
         } else {
-          // Multiple contexts found, show selection screen
           setDiscoveredProfiles(mappedProfiles);
           setLoading(false);
         }
       } else {
-        // First contact: Start Admin Onboarding for a NEW Org
+        // Start Admin Onboarding
         onSignIn({
           id: crypto.randomUUID(),
           org_id: null,
@@ -138,18 +136,24 @@ const Auth: React.FC<AuthProps> = ({ onSignIn }) => {
               )}
 
               <div className="space-y-4">
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Phone Identification</label>
+                <div className="flex justify-between items-center ml-1">
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Phone Number</label>
+                  <div className="flex items-center gap-1 text-[9px] font-black text-blue-600 uppercase tracking-widest">
+                    <Globe size={10} /> Use Full Format
+                  </div>
+                </div>
                 <div className="relative group">
                   <span className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-400 font-black text-lg transition-colors group-focus-within:text-blue-600">+</span>
                   <input
                     required
                     type="tel"
-                    placeholder="1 234 567 890"
+                    placeholder="91 72001 08575"
                     className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 focus:bg-white rounded-3xl py-5 pl-12 pr-6 outline-none transition-all font-black text-slate-800 text-lg shadow-inner"
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
                   />
                 </div>
+                <p className="text-[9px] text-slate-400 font-bold px-2 italic text-center">Important: Always include your country code (e.g. 91 for India) to match WhatsApp data.</p>
               </div>
 
               <button
@@ -166,14 +170,6 @@ const Auth: React.FC<AuthProps> = ({ onSignIn }) => {
             </form>
           </>
         ) : renderSelector()}
-
-        <div className="mt-12 flex flex-col items-center justify-center gap-4 relative z-10">
-          <div className="flex items-center gap-3 bg-emerald-50 px-4 py-2 rounded-full border border-emerald-100">
-            <ShieldCheck className="text-emerald-500" size={16} />
-            <p className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">Secure Unified Portal</p>
-          </div>
-          <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">Admins & Residents Only</p>
-        </div>
       </div>
     </div>
   );

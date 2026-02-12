@@ -11,7 +11,7 @@ import TenantPortal from './components/TenantPortal';
 import { Site, Asset, ServiceRequest, SRStatus, Status, SRSource, TabConfig, UserProfile, Tenant, BlockType, Block, Organization, Requester } from './types';
 import { supabase } from './lib/supabase';
 import { 
-  X, MapPin, Plus, Loader2, Wrench, ArrowRight, Layers, CheckCircle, Building, AlertCircle, RefreshCw, Phone, User, Package, UserCheck, Terminal, Rocket, Sparkles, UserCircle, UserMinus
+  X, MapPin, Plus, Loader2, Wrench, ArrowRight, Layers, CheckCircle, Building, AlertCircle, RefreshCw, Phone, User, Package, UserCheck, Terminal, Rocket, Sparkles, UserCircle, UserMinus, Hash
 } from 'lucide-react';
 
 const DEFAULT_TABS: TabConfig[] = [
@@ -34,9 +34,7 @@ const Onboarding: React.FC<{ user: UserProfile, onComplete: (user: UserProfile) 
   const handleSetup = async () => {
     setLoading(true);
     try {
-      // Standardize phone before saving to ensure exact digit match with Twilio
       const cleanPhone = user.phone.replace(/[^0-9]/g, '');
-      
       const { data: org, error: orgErr } = await supabase.from('organizations').insert([{ name: orgName }]).select().single();
       if (orgErr) throw orgErr;
 
@@ -92,7 +90,6 @@ const Onboarding: React.FC<{ user: UserProfile, onComplete: (user: UserProfile) 
         {step === 1 && (
           <div className="space-y-6 animate-in slide-in-from-right duration-300">
             <h2 className="text-3xl font-black text-slate-900 leading-tight">Your Identity</h2>
-            <p className="text-slate-500 text-xs font-medium -mt-4">This identifies you on tickets.</p>
             <input autoFocus className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 focus:bg-white rounded-3xl p-6 outline-none font-bold text-lg" placeholder="Admin Full Name" value={adminName} onChange={e => setAdminName(e.target.value)} />
             <button disabled={!adminName} onClick={() => setStep(2)} className="w-full bg-slate-900 text-white py-6 rounded-3xl font-black flex items-center justify-center gap-3 transition-all hover:bg-slate-800">Continue <ArrowRight /></button>
           </div>
@@ -100,7 +97,6 @@ const Onboarding: React.FC<{ user: UserProfile, onComplete: (user: UserProfile) 
         {step === 2 && (
           <div className="space-y-6 animate-in slide-in-from-right duration-300">
             <h2 className="text-3xl font-black text-slate-900">Organization</h2>
-            <p className="text-slate-500 text-xs font-medium -mt-4">The name of your facility or company.</p>
             <input autoFocus className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 focus:bg-white rounded-3xl p-6 outline-none font-bold text-lg" placeholder="e.g. Jungle" value={orgName} onChange={e => setOrgName(e.target.value)} />
             <button disabled={!orgName} onClick={() => setStep(3)} className="w-full bg-slate-900 text-white py-6 rounded-3xl font-black flex items-center justify-center gap-3 transition-all hover:bg-slate-800">Continue <ArrowRight /></button>
           </div>
@@ -131,7 +127,6 @@ const App: React.FC = () => {
   
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [sites, setSites] = useState<Site[]>([]);
-  const [blocks, setBlocks] = useState<Block[]>([]);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [requesters, setRequesters] = useState<Requester[]>([]);
@@ -234,7 +229,6 @@ const App: React.FC = () => {
       const name = formData.get('name') as string;
       const siteId = formData.get('site_id') as string;
 
-      // Profiles are the source of truth for Webhook lookups
       const { data: profile, error: profErr } = await supabase.from('profiles').insert([{
         phone: requester.phone,
         org_id: currentUser?.org_id,
@@ -274,7 +268,7 @@ const App: React.FC = () => {
       tabConfigs={tabConfigs.map(t => t.id === 'requesters' && requesters.length > 0 ? { ...t, label: `Approvals (${requesters.length})` } : t)} 
       orgName={organization?.name}
     >
-      {activeTab === 'dashboard' && <Dashboard srs={srs} onNewRequest={() => setShowAddSR(true)} assets={assets} organization={organization} />}
+      {activeTab === 'dashboard' && <Dashboard srs={srs} onNewRequest={() => setShowAddSR(true)} assets={assets} organization={organization} sites={sites} />}
       {activeTab === 'srs' && <SRList srs={srs} sites={sites} assets={assets} onSelect={() => {}} onNewRequest={() => setShowAddSR(true)} />}
       {activeTab === 'tenants' && <TenantList tenants={tenants} sites={sites} onAdd={() => {}} />}
       
@@ -304,7 +298,7 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {activeTab === 'assets' && <AssetList assets={assets} sites={sites} blocks={blocks} onAdd={() => {}} />}
+      {activeTab === 'assets' && <AssetList assets={assets} sites={sites} onAdd={() => {}} />}
       {activeTab === 'settings' && <Settings configs={tabConfigs} setConfigs={setTabConfigs} onLogout={() => { localStorage.removeItem('fm_engine_user'); window.location.reload(); }} />}
       {activeTab === 'sites' && (
         <div className="space-y-8 pb-20">
@@ -314,10 +308,26 @@ const App: React.FC = () => {
           </div>
           <div className="grid md:grid-cols-2 gap-8">
             {sites.map(site => (
-              <div key={site.id} className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm">
-                <div className="flex justify-between items-start mb-6"><div className="p-4 bg-blue-50 text-blue-600 rounded-2xl"><MapPin size={28} /></div><span className="text-[10px] font-black uppercase text-slate-400">#{site.code}</span></div>
-                <h3 className="text-2xl font-black text-slate-900">{site.name}</h3>
-                <p className="text-sm font-medium text-slate-500">{site.location}</p>
+              <div key={site.id} className="bg-white p-10 rounded-[48px] border border-slate-100 shadow-sm relative overflow-hidden group">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-blue-50 rounded-full -mr-16 -mt-16 group-hover:bg-blue-100 transition-colors" />
+                <div className="relative z-10">
+                  <div className="flex justify-between items-start mb-8">
+                    <div className="p-5 bg-blue-50 text-blue-600 rounded-2xl"><MapPin size={32} /></div>
+                    <div className="flex flex-col items-end">
+                      <span className="text-[10px] font-black uppercase text-slate-400 tracking-[0.2em] mb-1">Registration Code</span>
+                      <div className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl font-mono text-sm font-black shadow-lg shadow-slate-200">
+                        <Hash size={14} className="text-blue-400" /> {site.code}
+                      </div>
+                    </div>
+                  </div>
+                  <h3 className="text-3xl font-black text-slate-900 mb-2">{site.name}</h3>
+                  <p className="text-slate-500 font-medium">{site.location}</p>
+                  
+                  <div className="mt-8 pt-8 border-t border-slate-50 flex items-center gap-2 text-xs font-black text-slate-400 uppercase tracking-widest">
+                    <CheckCircle size={14} className="text-emerald-500" />
+                    Verified Facility
+                  </div>
+                </div>
               </div>
             ))}
           </div>
@@ -331,6 +341,16 @@ const App: React.FC = () => {
             <div className="space-y-4"><input required name="title" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold border-2 border-transparent focus:border-blue-500 text-slate-900" placeholder="Problem Summary" /><textarea name="description" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-medium h-32 border-2 border-transparent focus:border-blue-500 text-slate-900" placeholder="Full Details" /><select name="site_id" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold text-slate-900"><option value="">Select Facility</option>{sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
             <button type="submit" disabled={isLoading} className="w-full bg-blue-600 text-white py-6 rounded-3xl font-black text-xl shadow-xl shadow-blue-100">{isLoading ? <Loader2 className="animate-spin mx-auto" /> : 'Log Ticket'}</button>
           </form>
+        </div>
+      )}
+
+      {showAddSite && (
+        <div className="fixed inset-0 z-[1000] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4">
+           <form onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); handleAddItem('sites', { name: fd.get('name'), location: fd.get('location'), code: `SITE-${Math.floor(1000+Math.random()*9000)}`, status: Status.ACTIVE }, setSites, () => setShowAddSite(false)); }} className="bg-white w-full max-w-md rounded-[48px] p-12 shadow-2xl space-y-8 animate-in zoom-in duration-300">
+              <div className="flex justify-between items-center"><h3 className="text-3xl font-black text-slate-900">New Site</h3><button type="button" onClick={() => setShowAddSite(false)} className="p-2 bg-slate-100 rounded-full"><X size={24} /></button></div>
+              <div className="space-y-4"><input required name="name" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold text-slate-900 border-2 border-transparent focus:border-blue-500" placeholder="Facility Name" /><input required name="location" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold text-slate-900 border-2 border-transparent focus:border-blue-500" placeholder="Location" /></div>
+              <button type="submit" disabled={isLoading} className="w-full bg-slate-900 text-white py-6 rounded-3xl font-black">Register Site</button>
+           </form>
         </div>
       )}
 
