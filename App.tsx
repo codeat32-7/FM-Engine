@@ -34,6 +34,9 @@ const Onboarding: React.FC<{ user: UserProfile, onComplete: (user: UserProfile) 
   const handleSetup = async () => {
     setLoading(true);
     try {
+      // Standardize phone before saving to ensure exact digit match with Twilio
+      const cleanPhone = user.phone.replace(/[^0-9]/g, '');
+      
       const { data: org, error: orgErr } = await supabase.from('organizations').insert([{ name: orgName }]).select().single();
       if (orgErr) throw orgErr;
 
@@ -49,7 +52,7 @@ const Onboarding: React.FC<{ user: UserProfile, onComplete: (user: UserProfile) 
       const { error: profErr } = await supabase.from('profiles').upsert({
         id: user.id,
         org_id: org.id,
-        phone: user.phone,
+        phone: cleanPhone,
         full_name: adminName,
         role: 'admin'
       }, { onConflict: 'id' });
@@ -58,6 +61,7 @@ const Onboarding: React.FC<{ user: UserProfile, onComplete: (user: UserProfile) 
 
       const updatedUser: UserProfile = {
         ...user,
+        phone: cleanPhone,
         full_name: adminName,
         org_id: org.id,
         onboarded: true,
@@ -88,6 +92,7 @@ const Onboarding: React.FC<{ user: UserProfile, onComplete: (user: UserProfile) 
         {step === 1 && (
           <div className="space-y-6 animate-in slide-in-from-right duration-300">
             <h2 className="text-3xl font-black text-slate-900 leading-tight">Your Identity</h2>
+            <p className="text-slate-500 text-xs font-medium -mt-4">This identifies you on tickets.</p>
             <input autoFocus className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 focus:bg-white rounded-3xl p-6 outline-none font-bold text-lg" placeholder="Admin Full Name" value={adminName} onChange={e => setAdminName(e.target.value)} />
             <button disabled={!adminName} onClick={() => setStep(2)} className="w-full bg-slate-900 text-white py-6 rounded-3xl font-black flex items-center justify-center gap-3 transition-all hover:bg-slate-800">Continue <ArrowRight /></button>
           </div>
@@ -95,7 +100,8 @@ const Onboarding: React.FC<{ user: UserProfile, onComplete: (user: UserProfile) 
         {step === 2 && (
           <div className="space-y-6 animate-in slide-in-from-right duration-300">
             <h2 className="text-3xl font-black text-slate-900">Organization</h2>
-            <input autoFocus className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 focus:bg-white rounded-3xl p-6 outline-none font-bold text-lg" placeholder="e.g. Skyline Towers" value={orgName} onChange={e => setOrgName(e.target.value)} />
+            <p className="text-slate-500 text-xs font-medium -mt-4">The name of your facility or company.</p>
+            <input autoFocus className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 focus:bg-white rounded-3xl p-6 outline-none font-bold text-lg" placeholder="e.g. Jungle" value={orgName} onChange={e => setOrgName(e.target.value)} />
             <button disabled={!orgName} onClick={() => setStep(3)} className="w-full bg-slate-900 text-white py-6 rounded-3xl font-black flex items-center justify-center gap-3 transition-all hover:bg-slate-800">Continue <ArrowRight /></button>
           </div>
         )}
@@ -103,7 +109,7 @@ const Onboarding: React.FC<{ user: UserProfile, onComplete: (user: UserProfile) 
           <div className="space-y-6 animate-in slide-in-from-right duration-300">
             <h2 className="text-3xl font-black text-slate-900">Primary Site</h2>
             <div className="space-y-4">
-              <input autoFocus className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 focus:bg-white rounded-3xl p-5 outline-none font-bold text-slate-800" placeholder="Site Name" value={siteName} onChange={e => setSiteName(e.target.value)} />
+              <input autoFocus className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 focus:bg-white rounded-3xl p-5 outline-none font-bold text-slate-800" placeholder="Facility Name" value={siteName} onChange={e => setSiteName(e.target.value)} />
               <input className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 focus:bg-white rounded-3xl p-5 outline-none font-bold text-slate-800" placeholder="Location" value={siteLocation} onChange={e => setSiteLocation(e.target.value)} />
             </div>
             <button disabled={loading || !siteName || !siteLocation} onClick={handleSetup} className="w-full bg-blue-600 text-white py-6 rounded-3xl font-black flex items-center justify-center gap-3 transition-all hover:bg-blue-700">
@@ -132,7 +138,6 @@ const App: React.FC = () => {
   const [srs, setSrs] = useState<ServiceRequest[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [dbStatus, setDbStatus] = useState<'connecting' | 'connected' | 'error' | 'needs_setup'>('connecting');
-  const syncLock = useRef(false);
 
   const [tabConfigs, setTabConfigs] = useState<TabConfig[]>(() => {
     const saved = localStorage.getItem('fm_tabs');
@@ -145,9 +150,7 @@ const App: React.FC = () => {
         if (idx !== -1) merged[idx] = p;
       });
       return merged;
-    } catch {
-      return DEFAULT_TABS;
-    }
+    } catch { return DEFAULT_TABS; }
   });
 
   const [showAddSite, setShowAddSite] = useState(false);
@@ -180,97 +183,47 @@ const App: React.FC = () => {
     } finally { if (!silent) setIsLoading(false); }
   }, [currentUser?.org_id]);
 
-  const syncOrphanedRequesters = useCallback(async () => {
-    if (!currentUser?.org_id || syncLock.current) return;
-    syncLock.current = true;
-    try {
-      const { data: orphans } = await supabase
-        .from('service_requests')
-        .select('requester_phone')
-        .eq('org_id', currentUser.org_id)
-        .eq('source', 'WhatsApp');
-
-      if (!orphans || orphans.length === 0) return;
-
-      const phones = [...new Set(orphans.map(o => o.requester_phone).filter(Boolean))];
-
-      const [knownTens, knownReqs] = await Promise.all([
-        supabase.from('tenants').select('phone').in('phone', phones),
-        supabase.from('requesters').select('phone').in('phone', phones)
-      ]);
-
-      const logged = new Set([...(knownTens.data?.map(t => t.phone) || []), ...(knownReqs.data?.map(r => r.phone) || [])]);
-      const missing = phones.filter(p => !logged.has(p));
-
-      if (missing.length > 0) {
-        await supabase.from('requesters').upsert(
-          missing.map(p => ({ phone: p, org_id: currentUser.org_id, status: 'pending' })),
-          { onConflict: 'phone' }
-        );
-      }
-
-      const { data: freshReqs } = await supabase.from('requesters').select('*').eq('org_id', currentUser.org_id).eq('status', 'pending');
-      if (freshReqs) setRequesters(freshReqs);
-    } finally {
-      syncLock.current = false;
-    }
-  }, [currentUser?.org_id]);
-
   useEffect(() => {
     if (!currentUser?.org_id) return;
 
     const channel = supabase
-      .channel(`public-db-${currentUser.org_id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'service_requests' }, (payload) => {
+      .channel(`org-${currentUser.org_id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'service_requests', filter: `org_id=eq.${currentUser.org_id}` }, (payload) => {
         if (payload.eventType === 'INSERT') {
           const newSR = payload.new as ServiceRequest;
-          if (newSR.org_id === currentUser.org_id) {
-            setSrs(prev => [newSR, ...prev].sort((a,b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
-            if (newSR.source === 'WhatsApp') syncOrphanedRequesters();
-          }
+          setSrs(prev => [newSR, ...prev].sort((a,b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
         } else if (payload.eventType === 'UPDATE') {
           const updated = payload.new as ServiceRequest;
           setSrs(prev => prev.map(sr => sr.id === updated.id ? updated : sr));
         }
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'requesters' }, (payload) => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'requesters', filter: `org_id=eq.${currentUser.org_id}` }, (payload) => {
         if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
           const req = payload.new as Requester;
-          if (req.org_id === currentUser.org_id) {
-            if (req.status === 'pending') {
-              setRequesters(prev => {
-                const filtered = prev.filter(r => r.id !== req.id);
-                return [req, ...filtered];
-              });
-            } else {
-              setRequesters(prev => prev.filter(r => r.id !== req.id));
-            }
+          if (req.status === 'pending') {
+            setRequesters(prev => [req, ...prev.filter(r => r.id !== req.id)]);
+          } else {
+            setRequesters(prev => prev.filter(r => r.id !== req.id));
           }
         }
       })
       .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [currentUser?.org_id, syncOrphanedRequesters]);
+    return () => { supabase.removeChannel(channel); };
+  }, [currentUser?.org_id]);
 
   useEffect(() => {
     if (currentUser?.org_id) {
       fetchOrgData();
-      syncOrphanedRequesters();
     }
-  }, [currentUser?.org_id, fetchOrgData, syncOrphanedRequesters]);
+  }, [currentUser?.org_id, fetchOrgData]);
 
   const handleAddItem = async (table: string, payload: any, setter: Function, closeFn: Function) => {
     setIsLoading(true);
     try {
       const { data, error } = await supabase.from(table).insert([{ ...payload, org_id: currentUser?.org_id }]).select();
       if (error) throw error;
-      if (data) { 
-        setter((prev: any) => [data[0], ...prev]); 
-        closeFn(); 
-      }
+      if (data) { setter((prev: any) => [data[0], ...prev]); closeFn(); }
     } catch (e: any) { alert(e.message); }
     finally { setIsLoading(false); }
   };
@@ -281,6 +234,7 @@ const App: React.FC = () => {
       const name = formData.get('name') as string;
       const siteId = formData.get('site_id') as string;
 
+      // Profiles are the source of truth for Webhook lookups
       const { data: profile, error: profErr } = await supabase.from('profiles').insert([{
         phone: requester.phone,
         org_id: currentUser?.org_id,
@@ -312,14 +266,12 @@ const App: React.FC = () => {
   if (!currentUser.org_id && currentUser.role === 'admin') return <Onboarding user={currentUser} onComplete={setCurrentUser} />;
   if (currentUser.role === 'tenant') return <TenantPortal user={currentUser} onLogout={() => { localStorage.removeItem('fm_engine_user'); setCurrentUser(null); }} />;
 
-  const pendingApprovalsCount = requesters.length;
-
   return (
     <Layout 
       activeTab={activeTab} 
       onTabChange={setActiveTab} 
       dbStatus={dbStatus === 'error' ? 'error' : (dbStatus === 'connected' ? 'connected' : 'connecting')} 
-      tabConfigs={tabConfigs.map(t => t.id === 'requesters' && pendingApprovalsCount > 0 ? { ...t, label: `Approvals (${pendingApprovalsCount})` } : t)} 
+      tabConfigs={tabConfigs.map(t => t.id === 'requesters' && requesters.length > 0 ? { ...t, label: `Approvals (${requesters.length})` } : t)} 
       orgName={organization?.name}
     >
       {activeTab === 'dashboard' && <Dashboard srs={srs} onNewRequest={() => setShowAddSR(true)} assets={assets} organization={organization} />}
@@ -328,33 +280,15 @@ const App: React.FC = () => {
       
       {activeTab === 'requesters' && (
         <div className="space-y-6 animate-in fade-in duration-500">
-          <div className="flex justify-between items-end">
-            <div>
-              <h2 className="text-3xl font-black text-slate-900">Approvals</h2>
-              <p className="text-slate-500 font-medium text-sm">Unknown residents requesting facility access.</p>
-            </div>
-            <button 
-              onClick={() => { setIsLoading(true); syncOrphanedRequesters().finally(() => setIsLoading(false)); }} 
-              disabled={isLoading}
-              className="p-3 bg-white border border-slate-100 rounded-2xl text-slate-400 hover:text-blue-600 shadow-sm active:scale-90 transition-all"
-            >
-              <RefreshCw size={20} className={isLoading ? 'animate-spin' : ''} />
-            </button>
-          </div>
+          <div><h2 className="text-3xl font-black text-slate-900">Approvals</h2><p className="text-slate-500 font-medium text-sm">Verify strangers requesting facility access.</p></div>
           <div className="grid md:grid-cols-2 gap-6">
             {requesters.map(req => (
-              <div key={req.id} className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm flex flex-col justify-between hover:border-blue-200 transition-all animate-in slide-in-from-bottom-4 duration-300">
+              <div key={req.id} className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm flex flex-col justify-between hover:border-blue-200 transition-all">
                 <div className="flex items-center gap-4 mb-6">
-                  <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center relative">
-                    <Phone size={24} />
-                    <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 border-2 border-white rounded-full animate-pulse"></div>
-                  </div>
-                  <div>
-                    <p className="text-lg font-black text-slate-900 leading-none">+{req.phone}</p>
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Pending Approval</p>
-                  </div>
+                  <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center"><Phone size={24} /></div>
+                  <div><p className="text-lg font-black text-slate-900">+{req.phone}</p><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">New Contact</p></div>
                 </div>
-                <button onClick={() => setShowApproveModal(req)} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-slate-800 transition-all active:scale-95 shadow-lg shadow-slate-100">
+                <button onClick={() => setShowApproveModal(req)} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-slate-800 transition-all shadow-lg">
                   <UserCheck size={20} /> Identity & Activate
                 </button>
               </div>
@@ -363,7 +297,7 @@ const App: React.FC = () => {
               <div className="col-span-full py-24 text-center bg-white rounded-[40px] border-2 border-dashed border-slate-100">
                 <Sparkles className="text-slate-200 mx-auto mb-4" size={48} />
                 <p className="text-slate-400 font-black text-xl">Approval queue clear</p>
-                <p className="text-slate-400 text-sm mt-2 max-w-xs mx-auto">New WhatsApp users will appear here live when they send a request.</p>
+                <p className="text-slate-400 text-sm mt-2">New WhatsApp users will appear here if they are already in your system.</p>
               </div>
             )}
           </div>
@@ -400,22 +334,12 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {showAddSite && (
-        <div className="fixed inset-0 z-[1000] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4">
-           <form onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); handleAddItem('sites', { name: fd.get('name'), location: fd.get('location'), code: `SITE-${Math.floor(1000+Math.random()*9000)}`, status: Status.ACTIVE }, setSites, () => setShowAddSite(false)); }} className="bg-white w-full max-w-md rounded-[48px] p-12 shadow-2xl space-y-8 animate-in zoom-in duration-300">
-              <div className="flex justify-between items-center"><h3 className="text-3xl font-black text-slate-900">New Site</h3><button type="button" onClick={() => setShowAddSite(false)} className="p-2 bg-slate-100 rounded-full"><X size={24} /></button></div>
-              <div className="space-y-4"><input required name="name" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold text-slate-900 border-2 border-transparent focus:border-blue-500" placeholder="Facility Name" /><input required name="location" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold text-slate-900 border-2 border-transparent focus:border-blue-500" placeholder="Location" /></div>
-              <button type="submit" disabled={isLoading} className="w-full bg-slate-900 text-white py-6 rounded-3xl font-black">Register Site</button>
-           </form>
-        </div>
-      )}
-
       {showApproveModal && (
         <div className="fixed inset-0 z-[1000] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4">
           <form onSubmit={async (e) => { e.preventDefault(); await handleApproveTenant(showApproveModal, new FormData(e.currentTarget)); }} className="bg-white w-full max-w-lg rounded-[40px] p-10 shadow-2xl space-y-8 animate-in zoom-in duration-300">
             <div className="flex justify-between items-center"><h3 className="text-3xl font-black text-slate-900">Activate Resident</h3><button type="button" onClick={() => setShowApproveModal(null)} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200"><X size={24} /></button></div>
             <div className="space-y-4">
-              <div className="p-6 bg-blue-50 text-blue-700 rounded-2xl font-black flex items-center gap-4 text-lg border border-blue-100">
+              <div className="p-6 bg-blue-50 text-blue-700 rounded-2xl font-black flex items-center gap-4 text-lg">
                 <Phone size={24} /> +{showApproveModal.phone}
               </div>
               <input required name="name" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold text-slate-900 border-2 border-transparent focus:border-blue-500" placeholder="Full Name" />
@@ -424,7 +348,7 @@ const App: React.FC = () => {
                 {sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </div>
-            <button type="submit" disabled={isLoading} className="w-full bg-emerald-600 text-white py-6 rounded-3xl font-black text-xl flex items-center justify-center gap-3 active:scale-95 shadow-xl shadow-emerald-100 transition-all">
+            <button type="submit" disabled={isLoading} className="w-full bg-emerald-600 text-white py-6 rounded-3xl font-black text-xl shadow-xl shadow-emerald-100 transition-all">
                {isLoading ? <Loader2 className="animate-spin" /> : 'Confirm Approval'}
             </button>
           </form>
