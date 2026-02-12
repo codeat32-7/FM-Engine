@@ -11,7 +11,6 @@ export default async function handler(req: Request) {
     return new Response('Method Not Allowed', { status: 405 });
   }
 
-  // Use Service Role key if available to bypass RLS for webhook operations
   const supabase = createClient(
     process.env.SUPABASE_URL || '',
     process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || ''
@@ -20,7 +19,6 @@ export default async function handler(req: Request) {
   try {
     const text = await req.text();
     const params = new URLSearchParams(text);
-    
     const body = params.get('Body') || '';
     const from = params.get('From') || ''; 
 
@@ -28,9 +26,9 @@ export default async function handler(req: Request) {
 
     const cleanFrom = from.replace(/[^0-9]/g, '');
     const phoneSuffix = cleanFrom.slice(-10);
+    const msgUpper = body.toUpperCase();
 
-    // STEP 1: IDENTIFY THE LATEST ORGANIZATION
-    // We strictly use the most recently created organization for this demo.
+    // 1. SELECT THE LATEST ORGANIZATION (Demo Scope)
     const { data: latestOrg, error: orgError } = await supabase
       .from('organizations')
       .select('id, name')
@@ -39,15 +37,13 @@ export default async function handler(req: Request) {
       .maybeSingle();
 
     if (orgError || !latestOrg) {
-      console.error('Organization fetch error:', orgError);
-      return new Response('Error: No active organization found in database.', { status: 500 });
+      return new Response('Error: No active organization found.', { status: 500 });
     }
 
     const targetOrgId = latestOrg.id;
 
-    // STEP 2: CHECK IDENTITY WITHIN THIS ORGANIZATION ONLY
-    
-    // Check if phone belongs to a Profile (Admin/Tenant) of the LATEST org
+    // 2. IDENTIFY SENDER WITHIN THIS ORGANIZATION
+    // Priority: Profile (Admin/Tenant) > Requester (Approval Queue)
     const { data: profile } = await supabase
       .from('profiles')
       .select('id, full_name, role')
@@ -55,10 +51,10 @@ export default async function handler(req: Request) {
       .ilike('phone', `%${phoneSuffix}`)
       .maybeSingle();
 
-    let userStatus: 'profile' | 'existing_requester' | 'new_requester' = 'profile';
+    let userRole = profile ? profile.role : null;
+    let isNewToOrg = false;
 
     if (!profile) {
-      // Check if phone is already a known Requester for the LATEST org
       const { data: requester } = await supabase
         .from('requesters')
         .select('id, status')
@@ -66,43 +62,52 @@ export default async function handler(req: Request) {
         .ilike('phone', `%${phoneSuffix}`)
         .maybeSingle();
 
-      if (requester) {
-        userStatus = 'existing_requester';
-      } else {
-        // Brand new contact for this specific org - create a pending approval
+      if (!requester) {
+        // Record as new requester if unknown in this specific org
         await supabase.from('requesters').insert([{
           phone: cleanFrom,
           org_id: targetOrgId,
           status: 'pending',
           created_at: new Date().toISOString()
         }]);
-        userStatus = 'new_requester';
+        isNewToOrg = true;
       }
     }
 
-    // STEP 3: LOG THE SERVICE REQUEST
-    // Clean Twilio join keywords
+    // 3. OPTIONAL SITE MATCHING (within the org)
+    let targetSiteId = null;
+    const siteMatch = msgUpper.match(/(?:SITE-|S-?)(\d{3,})/);
+    if (siteMatch) {
+      const { data: site } = await supabase
+        .from('sites')
+        .select('id')
+        .eq('org_id', targetOrgId)
+        .ilike('code', `%${siteMatch[1]}%`)
+        .maybeSingle();
+      if (site) targetSiteId = site.id;
+    }
+
+    // 4. LOG THE TICKET
     const cleanBody = body.replace(/join\s+[a-z-]+\s*/gi, '').trim();
     let title = cleanBody.slice(0, 40) || 'Maintenance Request';
     
-    // AI Title Generation (Gemini 3 Flash)
+    // Quick AI Triage if available
     if (process.env.API_KEY && cleanBody.length > 5) {
       try {
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         const res = await ai.models.generateContent({
           model: 'gemini-3-flash-preview',
-          contents: `Create a 3-word title for this maintenance report: "${cleanBody}"`,
+          contents: `Create a 3-word title for this: "${cleanBody}"`,
         });
         if (res.text) title = res.text.trim().replace(/[".*]/g, '');
-      } catch (e) {
-        console.error('AI Title Failed:', e);
-      }
+      } catch (e) {}
     }
 
     const srId = `SR-${Math.floor(100000 + Math.random() * 900000)}`;
-    const { error: srError } = await supabase.from('service_requests').insert([{
+    await supabase.from('service_requests').insert([{
       id: srId,
       org_id: targetOrgId,
+      site_id: targetSiteId,
       title: title,
       description: cleanBody,
       requester_phone: cleanFrom,
@@ -111,20 +116,12 @@ export default async function handler(req: Request) {
       created_at: new Date().toISOString()
     }]);
 
-    if (srError) {
-      console.error('SR Insert Error:', srError);
-      return new Response('Error saving ticket', { status: 500 });
-    }
-
-    // STEP 4: PREPARE RESPONSE
+    // 5. RESPOND
     let reply = `✅ Ticket ${srId} logged for ${latestOrg.name}.`;
-    
-    if (userStatus === 'profile' && profile) {
-      reply = `✅ Hello ${profile.full_name}! Ticket ${srId} logged to your ${profile.role} dashboard for ${latestOrg.name}.`;
-    } else if (userStatus === 'new_requester') {
-      reply = `✅ Welcome to ${latestOrg.name}! Ticket ${srId} logged. Since you are a new contact, an administrator will verify your access shortly.`;
-    } else if (userStatus === 'existing_requester') {
-      reply = `✅ Ticket ${srId} logged for ${latestOrg.name}. Your contact is currently pending approval.`;
+    if (profile) {
+      reply = `✅ Hello ${profile.full_name}! Ticket ${srId} logged to your dashboard for ${latestOrg.name}.`;
+    } else if (isNewToOrg) {
+      reply = `✅ Welcome to ${latestOrg.name}! Ticket ${srId} logged. Since you're a new contact, an admin will verify your access shortly.`;
     }
 
     return new Response(`<?xml version="1.0" encoding="UTF-8"?><Response><Message>${reply}</Message></Response>`, {
@@ -132,7 +129,6 @@ export default async function handler(req: Request) {
     });
 
   } catch (err: any) {
-    console.error('Webhook Fatal Error:', err);
-    return new Response('Internal Server Error', { status: 500 });
+    return new Response('Internal Error', { status: 500 });
   }
 }
