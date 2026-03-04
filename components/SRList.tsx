@@ -1,18 +1,20 @@
 
 import React, { useState } from 'react';
-import { ServiceRequest, SRStatus, SRSource, Site, Asset } from '../types';
-import { Search, Filter, MessageSquare, Monitor, ChevronRight, Plus, Trash2, Calendar, MapPin, Package } from 'lucide-react';
+import { ServiceRequest, SRStatus, SRSource, Site, Asset, Tenant, Requester } from '../types';
+import { Search, Filter, MessageSquare, Monitor, ChevronRight, Plus, Trash2, Calendar, MapPin, Package, User } from 'lucide-react';
 
 interface SRListProps {
   srs: ServiceRequest[];
   sites: Site[];
   assets: Asset[];
+  tenants: Tenant[];
+  requesters: Requester[];
   onSelect: (sr: ServiceRequest) => void;
   onNewRequest: () => void;
   onDelete: (id: string) => void;
 }
 
-const SRList: React.FC<SRListProps> = ({ srs, sites, assets, onSelect, onNewRequest, onDelete }) => {
+const SRList: React.FC<SRListProps> = ({ srs, sites, assets, tenants, requesters, onSelect, onNewRequest, onDelete }) => {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All Statuses');
 
@@ -76,6 +78,7 @@ const SRList: React.FC<SRListProps> = ({ srs, sites, assets, onSelect, onNewRequ
                 <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">ID & Status</th>
                 <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Request Details</th>
                 <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Site & Asset</th>
+                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Requester</th>
                 <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Source</th>
                 <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Date</th>
                 <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400 text-right">Actions</th>
@@ -83,7 +86,7 @@ const SRList: React.FC<SRListProps> = ({ srs, sites, assets, onSelect, onNewRequ
             </thead>
             <tbody className="divide-y divide-slate-50">
               {filteredSRs.map(sr => (
-                <tr key={sr.id} className="hover:bg-slate-50/50 transition-colors group">
+                <tr key={sr.id} onClick={() => onSelect(sr)} className="hover:bg-slate-50/50 transition-colors group cursor-pointer">
                   <td className="px-6 py-4">
                     <div className="flex flex-col gap-1.5">
                       <span className="text-xs font-bold text-slate-400 tracking-widest uppercase">#{sr.id}</span>
@@ -110,6 +113,21 @@ const SRList: React.FC<SRListProps> = ({ srs, sites, assets, onSelect, onNewRequ
                       <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
                         <Package size={12} className="text-slate-400" />
                         <span>{getAssetName(sr.asset_id)}</span>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 bg-slate-100 rounded-full flex items-center justify-center text-slate-400">
+                        <User size={14} />
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold text-slate-700">
+                          {tenants.find(t => t.phone === sr.requester_phone)?.name || 
+                           requesters.find(r => r.phone === sr.requester_phone)?.name || 
+                           'Unknown'}
+                        </p>
+                        <p className="text-[10px] text-slate-400 font-medium">{sr.requester_phone || 'No phone'}</p>
                       </div>
                     </div>
                   </td>

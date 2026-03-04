@@ -101,6 +101,20 @@ export interface ServiceRequest {
   source: SRSource;
   resolution_notes?: string;
   created_at: string;
+  in_progress_at?: string;
+  resolved_at?: string;
+  closed_at?: string;
+}
+
+export interface SRMessage {
+  id: string;
+  org_id: string;
+  sr_id: string;
+  sender_id: string;
+  sender_role: 'admin' | 'tenant' | 'system';
+  content: string;
+  created_at: string;
+  is_whatsapp: boolean;
 }
 
 export interface TabConfig {

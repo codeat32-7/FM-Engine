@@ -8,6 +8,7 @@ import AssetList from './components/AssetList';
 import Settings from './components/Settings';
 import Auth from './components/Auth';
 import TenantPortal from './components/TenantPortal';
+import SRDetail from './components/SRDetail';
 import { Site, Asset, ServiceRequest, SRStatus, Status, SRSource, TabConfig, UserProfile, Tenant, Organization, Requester } from './types';
 import { supabase, checkSchemaReady } from './lib/supabase';
 import { 
@@ -132,6 +133,7 @@ const App: React.FC = () => {
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [requesters, setRequesters] = useState<Requester[]>([]);
   const [srs, setSrs] = useState<ServiceRequest[]>([]);
+  const [selectedSr, setSelectedSr] = useState<ServiceRequest | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [dbStatus, setDbStatus] = useState<'connecting' | 'connected' | 'error' | 'needs_setup'>('connecting');
 
@@ -182,6 +184,7 @@ const App: React.FC = () => {
         supabase.from('requesters').select('*').eq('org_id', currentUser.org_id).eq('status', 'pending')
       ]);
       
+      setOrganization(orgData.data);
       setSites(siteData.data || []);
       setAssets(assetData.data || []);
       setTenants(tenantData.data || []);
@@ -205,6 +208,7 @@ const App: React.FC = () => {
         } else if (payload.eventType === 'UPDATE') {
           const updated = payload.new as ServiceRequest;
           setSrs(prev => prev.map(sr => sr.id === updated.id ? updated : sr));
+          if (selectedSr?.id === updated.id) setSelectedSr(updated);
         }
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'requesters', filter: `org_id=eq.${currentUser.org_id}` }, (payload) => {
@@ -239,6 +243,29 @@ const App: React.FC = () => {
   };
 
   const handleDeleteItem = async (table: string, id: string | number, setter: (prev: any) => void) => {
+    // Connection checks
+    if (table === 'sites') {
+      const isPrimary = sites.length > 0 && sites[0].id === id;
+      if (isPrimary) {
+        alert("Cannot delete the primary site. Every organization must have at least one site.");
+        return;
+      }
+      const hasAssets = assets.some(a => a.site_id === id);
+      const hasTenants = tenants.some(t => t.site_id === id);
+      const hasSRs = srs.some(sr => sr.site_id === id);
+      if (hasAssets || hasTenants || hasSRs) {
+        if (!confirm("This site has connected assets, tenants, or service requests. Deleting it will leave them without a site assignment. Proceed?")) return;
+      }
+    }
+
+    if (table === 'tenants') {
+      const tenant = tenants.find(t => t.id === id);
+      const hasSRs = srs.some(sr => sr.requester_phone === tenant?.phone);
+      if (hasSRs) {
+        if (!confirm("This tenant has active service requests. Deleting the tenant will disconnect them from their history. Proceed?")) return;
+      }
+    }
+
     if (!confirm("Are you sure you want to delete this item?")) return;
     setIsLoading(true);
     try {
@@ -355,14 +382,30 @@ CREATE TABLE IF NOT EXISTS service_requests (
   source TEXT DEFAULT 'Web',
   requester_phone TEXT,
   resolution_notes TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  in_progress_at TIMESTAMPTZ,
+  resolved_at TIMESTAMPTZ,
+  closed_at TIMESTAMPTZ
 );
 
--- 7. Requesters
+-- 7. SR Messages (Chat)
+CREATE TABLE IF NOT EXISTS sr_messages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
+  sr_id TEXT REFERENCES service_requests(id) ON DELETE CASCADE,
+  sender_id TEXT NOT NULL,
+  sender_role TEXT NOT NULL,
+  content TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  is_whatsapp BOOLEAN DEFAULT FALSE
+);
+
+-- 8. Requesters
 CREATE TABLE IF NOT EXISTS requesters (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   org_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
   phone TEXT NOT NULL,
+  name TEXT,
   status TEXT DEFAULT 'pending',
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -374,6 +417,7 @@ ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE assets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tenants ENABLE ROW LEVEL SECURITY;
 ALTER TABLE service_requests ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sr_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE requesters ENABLE ROW LEVEL SECURITY;
 
 -- POLICIES
@@ -383,6 +427,7 @@ CREATE POLICY "Public Access" ON profiles FOR ALL USING (true);
 CREATE POLICY "Public Access" ON assets FOR ALL USING (true);
 CREATE POLICY "Public Access" ON tenants FOR ALL USING (true);
 CREATE POLICY "Public Access" ON service_requests FOR ALL USING (true);
+CREATE POLICY "Public Access" ON sr_messages FOR ALL USING (true);
 CREATE POLICY "Public Access" ON requesters FOR ALL USING (true);`;
 
     return (
@@ -438,8 +483,24 @@ CREATE POLICY "Public Access" ON requesters FOR ALL USING (true);`;
       orgName={organization?.name}
     >
       {activeTab === 'dashboard' && <Dashboard srs={srs} onNewRequest={() => setShowAddSR(true)} assets={assets} organization={organization} sites={sites} />}
-      {activeTab === 'srs' && <SRList srs={srs} sites={sites} assets={assets} onSelect={() => {}} onNewRequest={() => setShowAddSR(true)} onDelete={(id) => handleDeleteItem('service_requests', id, setSrs)} />}
+      {activeTab === 'srs' && <SRList srs={srs} sites={sites} assets={assets} tenants={tenants} requesters={requesters} onSelect={setSelectedSr} onNewRequest={() => setShowAddSR(true)} onDelete={(id) => handleDeleteItem('service_requests', id, setSrs)} />}
       {activeTab === 'tenants' && <TenantList tenants={tenants} sites={sites} onAdd={() => {}} onDelete={(id) => handleDeleteItem('tenants', id, setTenants)} />}
+      
+      {selectedSr && (
+        <SRDetail 
+          sr={selectedSr} 
+          sites={sites} 
+          assets={assets} 
+          tenants={tenants}
+          requesters={requesters}
+          currentUser={currentUser}
+          onClose={() => setSelectedSr(null)} 
+          onUpdate={(updated) => {
+            setSrs(prev => prev.map(sr => sr.id === updated.id ? updated : sr));
+            setSelectedSr(updated);
+          }} 
+        />
+      )}
       
       {activeTab === 'requesters' && (
         <div className="space-y-6 animate-in fade-in duration-500">
