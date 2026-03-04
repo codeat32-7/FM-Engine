@@ -11,7 +11,7 @@ interface DashboardProps {
   sites?: Site[];
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ srs, onNewRequest, assets, organization, sites = [] }) => {
+const Dashboard: React.FC<DashboardProps> = ({ srs, onNewRequest, assets, organization }) => {
   const resolvedCount = srs.filter(sr => sr.status === SRStatus.RESOLVED || sr.status === SRStatus.CLOSED).length;
   const activeCount = srs.filter(sr => sr.status === SRStatus.NEW || sr.status === SRStatus.IN_PROGRESS).length;
   
@@ -32,7 +32,7 @@ const Dashboard: React.FC<DashboardProps> = ({ srs, onNewRequest, assets, organi
           text: shareText,
           url: whatsappUrl,
         });
-      } catch (err) {
+      } catch {
         window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, '_blank');
       }
     } else {

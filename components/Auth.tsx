@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { MessageSquare, ArrowRight, Loader2, AlertCircle, ShieldCheck, UserCircle, ChevronRight } from 'lucide-react';
+import { ArrowRight, Loader2, AlertCircle, ShieldCheck, UserCircle, ChevronRight } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { UserProfile } from '../types';
 

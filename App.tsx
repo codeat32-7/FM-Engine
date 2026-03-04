@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Layout from './components/Layout';
 import Dashboard from './components/Dashboard';
 import SRList from './components/SRList';
@@ -8,10 +8,10 @@ import AssetList from './components/AssetList';
 import Settings from './components/Settings';
 import Auth from './components/Auth';
 import TenantPortal from './components/TenantPortal';
-import { Site, Asset, ServiceRequest, SRStatus, Status, SRSource, TabConfig, UserProfile, Tenant, BlockType, Block, Organization, Requester } from './types';
+import { Site, Asset, ServiceRequest, SRStatus, Status, SRSource, TabConfig, UserProfile, Tenant, Organization, Requester } from './types';
 import { supabase, checkSchemaReady } from './lib/supabase';
 import { 
-  X, MapPin, Plus, Loader2, Wrench, ArrowRight, Layers, CheckCircle, Building, AlertCircle, RefreshCw, Phone, User, Package, UserCheck, Terminal, Rocket, Sparkles, UserCircle, UserMinus, Hash, Database, Trash2
+  X, MapPin, Plus, Loader2, ArrowRight, CheckCircle, AlertCircle, RefreshCw, Phone, UserCheck, Rocket, Sparkles, Hash, Trash2
 } from 'lucide-react';
 
 const DEFAULT_TABS: TabConfig[] = [
@@ -188,7 +188,7 @@ const App: React.FC = () => {
       setRequesters(reqData.data || []);
       setSrs((srData.data || []).sort((a,b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
       setDbStatus('connected');
-    } catch (err: any) { 
+    } catch { 
       setDbStatus('error');
     } finally { if (!silent) setIsLoading(false); }
   }, [currentUser?.org_id]);

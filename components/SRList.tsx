@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { ServiceRequest, SRStatus, SRSource, Site, Asset } from '../types';
-import { Search, Filter, MessageSquare, Monitor, ChevronRight, Plus, UserPlus, Trash2, Calendar, MapPin, Package } from 'lucide-react';
+import { Search, Filter, MessageSquare, Monitor, ChevronRight, Plus, Trash2, Calendar, MapPin, Package } from 'lucide-react';
 
 interface SRListProps {
   srs: ServiceRequest[];
