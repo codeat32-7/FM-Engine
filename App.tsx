@@ -11,7 +11,7 @@ import TenantPortal from './components/TenantPortal';
 import { Site, Asset, ServiceRequest, SRStatus, Status, SRSource, TabConfig, UserProfile, Tenant, BlockType, Block, Organization, Requester } from './types';
 import { supabase, checkSchemaReady } from './lib/supabase';
 import { 
-  X, MapPin, Plus, Loader2, Wrench, ArrowRight, Layers, CheckCircle, Building, AlertCircle, RefreshCw, Phone, User, Package, UserCheck, Terminal, Rocket, Sparkles, UserCircle, UserMinus, Hash, Database
+  X, MapPin, Plus, Loader2, Wrench, ArrowRight, Layers, CheckCircle, Building, AlertCircle, RefreshCw, Phone, User, Package, UserCheck, Terminal, Rocket, Sparkles, UserCircle, UserMinus, Hash, Database, Trash2
 } from 'lucide-react';
 
 const DEFAULT_TABS: TabConfig[] = [
@@ -228,12 +228,23 @@ const App: React.FC = () => {
     }
   }, [currentUser?.org_id, fetchOrgData]);
 
-  const handleAddItem = async (table: string, payload: any, setter: Function, closeFn: Function) => {
+  const handleAddItem = async (table: string, payload: any, setter: (prev: any) => void, closeFn: () => void) => {
     setIsLoading(true);
     try {
       const { data, error } = await supabase.from(table).insert([{ ...payload, org_id: currentUser?.org_id }]).select();
       if (error) throw error;
       if (data) { setter((prev: any) => [data[0], ...prev]); closeFn(); }
+    } catch (e: any) { alert(e.message); }
+    finally { setIsLoading(false); }
+  };
+
+  const handleDeleteItem = async (table: string, id: string | number, setter: (prev: any) => void) => {
+    if (!confirm("Are you sure you want to delete this item?")) return;
+    setIsLoading(true);
+    try {
+      const { error } = await supabase.from(table).delete().eq('id', id);
+      if (error) throw error;
+      setter((prev: any) => prev.filter((item: any) => item.id !== id));
     } catch (e: any) { alert(e.message); }
     finally { setIsLoading(false); }
   };
@@ -427,15 +438,21 @@ CREATE POLICY "Public Access" ON requesters FOR ALL USING (true);`;
       orgName={organization?.name}
     >
       {activeTab === 'dashboard' && <Dashboard srs={srs} onNewRequest={() => setShowAddSR(true)} assets={assets} organization={organization} sites={sites} />}
-      {activeTab === 'srs' && <SRList srs={srs} sites={sites} assets={assets} onSelect={() => {}} onNewRequest={() => setShowAddSR(true)} />}
-      {activeTab === 'tenants' && <TenantList tenants={tenants} sites={sites} onAdd={() => {}} />}
+      {activeTab === 'srs' && <SRList srs={srs} sites={sites} assets={assets} onSelect={() => {}} onNewRequest={() => setShowAddSR(true)} onDelete={(id) => handleDeleteItem('service_requests', id, setSrs)} />}
+      {activeTab === 'tenants' && <TenantList tenants={tenants} sites={sites} onAdd={() => {}} onDelete={(id) => handleDeleteItem('tenants', id, setTenants)} />}
       
       {activeTab === 'requesters' && (
         <div className="space-y-6 animate-in fade-in duration-500">
           <div><h2 className="text-3xl font-black text-slate-900">Approvals</h2><p className="text-slate-500 font-medium text-sm">Verify strangers requesting facility access.</p></div>
           <div className="grid md:grid-cols-2 gap-6">
             {requesters.map(req => (
-              <div key={req.id} className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm flex flex-col justify-between hover:border-blue-200 transition-all">
+              <div key={req.id} className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm flex flex-col justify-between hover:border-blue-200 transition-all relative group">
+                <button 
+                  onClick={() => handleDeleteItem('requesters', req.id, setRequesters)}
+                  className="absolute top-6 right-6 p-2 text-slate-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+                >
+                  <Trash2 size={18} />
+                </button>
                 <div className="flex items-center gap-4 mb-6">
                   <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center"><Phone size={24} /></div>
                   <div><p className="text-lg font-black text-slate-900">+{req.phone}</p><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">New Contact</p></div>
@@ -456,7 +473,7 @@ CREATE POLICY "Public Access" ON requesters FOR ALL USING (true);`;
         </div>
       )}
 
-      {activeTab === 'assets' && <AssetList assets={assets} sites={sites} onAdd={() => {}} />}
+      {activeTab === 'assets' && <AssetList assets={assets} sites={sites} onAdd={() => {}} onDelete={(id) => handleDeleteItem('assets', id, setAssets)} />}
       {activeTab === 'settings' && <Settings configs={tabConfigs} setConfigs={setTabConfigs} onLogout={() => { localStorage.removeItem('fm_engine_user'); window.location.reload(); }} />}
       {activeTab === 'sites' && (
         <div className="space-y-8 pb-20">
@@ -468,6 +485,12 @@ CREATE POLICY "Public Access" ON requesters FOR ALL USING (true);`;
             {sites.map(site => (
               <div key={site.id} className="bg-white p-10 rounded-[48px] border border-slate-100 shadow-sm relative overflow-hidden group">
                 <div className="absolute top-0 right-0 w-32 h-32 bg-blue-50 rounded-full -mr-16 -mt-16 group-hover:bg-blue-100 transition-colors" />
+                <button 
+                  onClick={() => handleDeleteItem('sites', site.id, setSites)}
+                  className="absolute top-8 right-8 p-2 text-slate-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100 z-20"
+                >
+                  <Trash2 size={20} />
+                </button>
                 <div className="relative z-10">
                   <div className="flex justify-between items-start mb-8">
                     <div className="p-5 bg-blue-50 text-blue-600 rounded-2xl"><MapPin size={32} /></div>

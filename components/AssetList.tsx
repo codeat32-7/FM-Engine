@@ -1,16 +1,17 @@
 
 import React from 'react';
 import { Asset, Site, Block, Status } from '../types';
-import { Plus, Search, Package, MapPin, Layers } from 'lucide-react';
+import { Plus, Search, Package, MapPin, Layers, Trash2 } from 'lucide-react';
 
 interface AssetListProps {
   assets: Asset[];
   sites: Site[];
   blocks: Block[];
   onAdd: () => void;
+  onDelete: (id: string) => void;
 }
 
-const AssetList: React.FC<AssetListProps> = ({ assets, sites, blocks, onAdd }) => {
+const AssetList: React.FC<AssetListProps> = ({ assets, sites, blocks, onAdd, onDelete }) => {
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex justify-between items-end">
@@ -34,7 +35,13 @@ const AssetList: React.FC<AssetListProps> = ({ assets, sites, blocks, onAdd }) =
 
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 pb-20">
         {assets.map(asset => (
-          <div key={asset.id} className="bg-white p-8 rounded-[32px] border border-slate-100 shadow-sm hover:shadow-xl transition-all group">
+          <div key={asset.id} className="bg-white p-8 rounded-[32px] border border-slate-100 shadow-sm hover:shadow-xl transition-all group relative">
+            <button 
+              onClick={() => onDelete(asset.id)}
+              className="absolute top-6 right-6 p-2 text-slate-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+            >
+              <Trash2 size={18} />
+            </button>
             <div className="flex justify-between items-start mb-6">
               <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-400 group-hover:bg-blue-600 group-hover:text-white transition-all">
                 <Package size={28} />

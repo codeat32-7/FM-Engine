@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { ServiceRequest, SRStatus, SRSource, Site, Asset } from '../types';
-import { Search, Filter, MessageSquare, Monitor, ChevronRight, Plus, UserPlus } from 'lucide-react';
+import { Search, Filter, MessageSquare, Monitor, ChevronRight, Plus, UserPlus, Trash2, Calendar, MapPin, Package } from 'lucide-react';
 
 interface SRListProps {
   srs: ServiceRequest[];
@@ -9,9 +9,10 @@ interface SRListProps {
   assets: Asset[];
   onSelect: (sr: ServiceRequest) => void;
   onNewRequest: () => void;
+  onDelete: (id: string) => void;
 }
 
-const SRList: React.FC<SRListProps> = ({ srs, sites, assets, onSelect, onNewRequest }) => {
+const SRList: React.FC<SRListProps> = ({ srs, sites, assets, onSelect, onNewRequest, onDelete }) => {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All Statuses');
 
@@ -67,62 +68,90 @@ const SRList: React.FC<SRListProps> = ({ srs, sites, assets, onSelect, onNewRequ
         </div>
       </div>
 
-      <div className="space-y-4">
-        {filteredSRs.map(sr => (
-          <div 
-            key={sr.id}
-            onClick={() => onSelect(sr)}
-            className={`bg-white p-6 rounded-2xl border transition-all cursor-pointer group shadow-sm ${
-              !sr.site_id ? 'border-l-4 border-l-amber-500 border-slate-100' : 'border-slate-100 hover:border-blue-200'
-            }`}
-          >
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <span className="text-xs font-bold text-slate-400 tracking-widest uppercase">#{sr.id}</span>
-                <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
-                  sr.status === SRStatus.NEW ? 'bg-blue-100 text-blue-700' :
-                  sr.status === SRStatus.IN_PROGRESS ? 'bg-amber-100 text-amber-700' :
-                  sr.status === SRStatus.RESOLVED ? 'bg-emerald-100 text-emerald-700' :
-                  'bg-slate-100 text-slate-600'
-                }`}>
-                  {sr.status}
-                </span>
-                {!sr.site_id && (
-                  <span className="flex items-center gap-1 bg-amber-50 text-amber-700 text-[9px] font-black px-2 py-0.5 rounded uppercase tracking-tighter">
-                    <UserPlus size={10} /> Pending Recognition
-                  </span>
-                )}
-              </div>
-              <span className="text-[11px] font-medium text-slate-400">{new Date(sr.created_at).toLocaleDateString()}</span>
-            </div>
-
-            <h3 className="text-lg font-bold text-slate-800 mb-1 group-hover:text-blue-600 transition-colors">{sr.title}</h3>
-            <p className="text-sm text-slate-500 mb-6">{sr.description}</p>
-
-            <div className="flex flex-wrap gap-2">
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-100 rounded-lg">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Site:</span>
-                <span className={`text-xs font-semibold ${!sr.site_id ? 'text-amber-600 italic' : 'text-slate-700'}`}>
-                  {getSiteName(sr.site_id)}
-                </span>
-              </div>
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-100 rounded-lg">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Asset:</span>
-                <span className="text-xs font-semibold text-slate-700">{getAssetName(sr.asset_id)}</span>
-              </div>
-              <div className={`ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider ${
-                sr.source === SRSource.WHATSAPP ? 'text-emerald-600 bg-emerald-50' : 'text-slate-500 bg-slate-50'
-              }`}>
-                {sr.source === SRSource.WHATSAPP ? <MessageSquare size={14} /> : <Monitor size={14} />}
-                {sr.source}
-              </div>
-            </div>
-          </div>
-        ))}
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-slate-50 border-bottom border-slate-100">
+                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">ID & Status</th>
+                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Request Details</th>
+                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Site & Asset</th>
+                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Source</th>
+                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Date</th>
+                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {filteredSRs.map(sr => (
+                <tr key={sr.id} className="hover:bg-slate-50/50 transition-colors group">
+                  <td className="px-6 py-4">
+                    <div className="flex flex-col gap-1.5">
+                      <span className="text-xs font-bold text-slate-400 tracking-widest uppercase">#{sr.id}</span>
+                      <span className={`inline-flex px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider w-fit ${
+                        sr.status === SRStatus.NEW ? 'bg-blue-100 text-blue-700' :
+                        sr.status === SRStatus.IN_PROGRESS ? 'bg-amber-100 text-amber-700' :
+                        sr.status === SRStatus.RESOLVED ? 'bg-emerald-100 text-emerald-700' :
+                        'bg-slate-100 text-slate-600'
+                      }`}>
+                        {sr.status}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 max-w-xs">
+                    <h3 className="text-sm font-bold text-slate-800 line-clamp-1">{sr.title}</h3>
+                    <p className="text-xs text-slate-500 line-clamp-1">{sr.description}</p>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-700">
+                        <MapPin size={12} className="text-slate-400" />
+                        <span className={!sr.site_id ? 'text-amber-600 italic' : ''}>{getSiteName(sr.site_id)}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
+                        <Package size={12} className="text-slate-400" />
+                        <span>{getAssetName(sr.asset_id)}</span>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider ${
+                      sr.source === SRSource.WHATSAPP ? 'text-emerald-600 bg-emerald-50' : 'text-slate-500 bg-slate-50'
+                    }`}>
+                      {sr.source === SRSource.WHATSAPP ? <MessageSquare size={12} /> : <Monitor size={12} />}
+                      {sr.source}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                      <Calendar size={12} className="text-slate-400" />
+                      {new Date(sr.created_at).toLocaleDateString()}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 text-right">
+                    <div className="flex items-center justify-end gap-2">
+                      <button 
+                        onClick={() => onSelect(sr)}
+                        className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                      >
+                        <ChevronRight size={18} />
+                      </button>
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); onDelete(sr.id); }}
+                        className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
 
         {filteredSRs.length === 0 && (
-          <div className="text-center py-20 bg-white rounded-2xl border border-dashed border-slate-300">
-            <p className="text-slate-400">No service requests found.</p>
+          <div className="text-center py-20">
+            <p className="text-slate-400 font-medium">No service requests found.</p>
           </div>
         )}
       </div>
