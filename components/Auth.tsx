@@ -12,6 +12,16 @@ interface ProfileWithOrg extends UserProfile {
   org_name?: string;
 }
 
+const generateUUID = () => {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+};
+
 const Auth: React.FC<AuthProps> = ({ onSignIn }) => {
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
@@ -33,7 +43,10 @@ const Auth: React.FC<AuthProps> = ({ onSignIn }) => {
         .select('*, organizations(name)')
         .ilike('phone', `%${suffix}`);
 
-      if (profErr) throw profErr;
+      if (profErr) {
+        console.error("Supabase Error:", profErr);
+        throw new Error(profErr.message);
+      }
 
       if (profiles && profiles.length > 0) {
         const mappedProfiles: ProfileWithOrg[] = profiles.map(p => ({
@@ -54,7 +67,7 @@ const Auth: React.FC<AuthProps> = ({ onSignIn }) => {
         }
       } else {
         onSignIn({
-          id: crypto.randomUUID(),
+          id: generateUUID(),
           org_id: null,
           phone: cleanPhone,
           full_name: '',
@@ -63,7 +76,7 @@ const Auth: React.FC<AuthProps> = ({ onSignIn }) => {
         });
       }
     } catch (err: any) {
-      setError("Login failed. Check connection.");
+      setError(`Login failed: ${err.message || "Check connection"}`);
       setLoading(false);
     }
   };

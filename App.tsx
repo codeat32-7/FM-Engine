@@ -9,9 +9,9 @@ import Settings from './components/Settings';
 import Auth from './components/Auth';
 import TenantPortal from './components/TenantPortal';
 import { Site, Asset, ServiceRequest, SRStatus, Status, SRSource, TabConfig, UserProfile, Tenant, BlockType, Block, Organization, Requester } from './types';
-import { supabase } from './lib/supabase';
+import { supabase, checkSchemaReady } from './lib/supabase';
 import { 
-  X, MapPin, Plus, Loader2, Wrench, ArrowRight, Layers, CheckCircle, Building, AlertCircle, RefreshCw, Phone, User, Package, UserCheck, Terminal, Rocket, Sparkles, UserCircle, UserMinus, Hash
+  X, MapPin, Plus, Loader2, Wrench, ArrowRight, Layers, CheckCircle, Building, AlertCircle, RefreshCw, Phone, User, Package, UserCheck, Terminal, Rocket, Sparkles, UserCircle, UserMinus, Hash, Database
 } from 'lucide-react';
 
 const DEFAULT_TABS: TabConfig[] = [
@@ -152,6 +152,20 @@ const App: React.FC = () => {
   const [showAddSR, setShowAddSR] = useState(false);
   const [showApproveModal, setShowApproveModal] = useState<Requester | null>(null);
 
+  useEffect(() => {
+    const init = async () => {
+      const status = await checkSchemaReady();
+      if (status.needsSetup) {
+        setDbStatus('needs_setup');
+      } else if (status.error) {
+        setDbStatus('error');
+      } else {
+        setDbStatus('connected');
+      }
+    };
+    init();
+  }, []);
+
   const fetchOrgData = useCallback(async (silent: boolean = false) => {
     if (!currentUser?.org_id) return;
     if (!silent) setIsLoading(true);
@@ -256,7 +270,150 @@ const App: React.FC = () => {
     finally { setIsLoading(false); }
   };
 
+  if (dbStatus === 'connecting') {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+        <Loader2 className="animate-spin text-blue-500" size={48} />
+      </div>
+    );
+  }
+
+  if (dbStatus === 'needs_setup') {
+    const sqlScript = `-- 1. Organizations
+CREATE TABLE IF NOT EXISTS organizations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 2. Sites
+CREATE TABLE IF NOT EXISTS sites (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  code TEXT UNIQUE NOT NULL,
+  location TEXT,
+  status TEXT DEFAULT 'ACTIVE',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 3. Profiles
+CREATE TABLE IF NOT EXISTS profiles (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
+  site_id UUID REFERENCES sites(id) ON DELETE SET NULL,
+  phone TEXT UNIQUE NOT NULL,
+  full_name TEXT,
+  role TEXT DEFAULT 'admin',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 4. Assets
+CREATE TABLE IF NOT EXISTS assets (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
+  site_id UUID REFERENCES sites(id) ON DELETE SET NULL,
+  name TEXT NOT NULL,
+  type TEXT,
+  status TEXT DEFAULT 'ACTIVE',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 5. Tenants
+CREATE TABLE IF NOT EXISTS tenants (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
+  site_id UUID REFERENCES sites(id) ON DELETE SET NULL,
+  profile_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  phone TEXT NOT NULL,
+  status TEXT DEFAULT 'ACTIVE',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 6. Service Requests
+CREATE TABLE IF NOT EXISTS service_requests (
+  id TEXT PRIMARY KEY,
+  org_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
+  site_id UUID REFERENCES sites(id) ON DELETE SET NULL,
+  asset_id UUID REFERENCES assets(id) ON DELETE SET NULL,
+  title TEXT NOT NULL,
+  description TEXT,
+  status TEXT DEFAULT 'New',
+  source TEXT DEFAULT 'Web',
+  requester_phone TEXT,
+  resolution_notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 7. Requesters
+CREATE TABLE IF NOT EXISTS requesters (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
+  phone TEXT NOT NULL,
+  status TEXT DEFAULT 'pending',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ENABLE RLS
+ALTER TABLE organizations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sites ENABLE ROW LEVEL SECURITY;
+ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE assets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tenants ENABLE ROW LEVEL SECURITY;
+ALTER TABLE service_requests ENABLE ROW LEVEL SECURITY;
+ALTER TABLE requesters ENABLE ROW LEVEL SECURITY;
+
+-- POLICIES
+CREATE POLICY "Public Access" ON organizations FOR ALL USING (true);
+CREATE POLICY "Public Access" ON sites FOR ALL USING (true);
+CREATE POLICY "Public Access" ON profiles FOR ALL USING (true);
+CREATE POLICY "Public Access" ON assets FOR ALL USING (true);
+CREATE POLICY "Public Access" ON tenants FOR ALL USING (true);
+CREATE POLICY "Public Access" ON service_requests FOR ALL USING (true);
+CREATE POLICY "Public Access" ON requesters FOR ALL USING (true);`;
+
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6 text-white">
+        <div className="max-w-3xl w-full bg-slate-800 rounded-[48px] p-12 border border-slate-700 shadow-2xl space-y-8 animate-in zoom-in duration-500">
+          <div className="flex items-center gap-6 text-amber-400">
+            <AlertCircle size={64} />
+            <div>
+              <h1 className="text-4xl font-black">Database Setup Required</h1>
+              <p className="text-slate-400 text-lg mt-2 font-medium">The required tables are missing from your Supabase project.</p>
+            </div>
+          </div>
+          
+          <div className="space-y-4">
+            <p className="text-slate-300 font-medium">Please run the following script in your <strong className="text-white">Supabase SQL Editor</strong> to initialize the database and enable Row Level Security (RLS):</p>
+            <div className="bg-black/40 rounded-3xl p-8 font-mono text-xs text-emerald-400 border border-white/5 relative group">
+              <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button 
+                  onClick={() => { navigator.clipboard.writeText(sqlScript); alert("SQL Copied!"); }}
+                  className="bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2"
+                >
+                  Copy SQL
+                </button>
+              </div>
+              <pre className="overflow-x-auto max-h-[400px] overflow-y-auto custom-scrollbar">
+                {sqlScript}
+              </pre>
+            </div>
+          </div>
+
+          <button 
+            onClick={() => window.location.reload()}
+            className="w-full bg-blue-600 hover:bg-blue-500 text-white py-6 rounded-3xl font-black text-xl transition-all shadow-xl shadow-blue-900/20 flex items-center justify-center gap-3"
+          >
+            <RefreshCw size={24} /> I've run the SQL, Refresh App
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (!currentUser) return <Auth onSignIn={(u) => { localStorage.setItem('fm_engine_user', JSON.stringify(u)); setCurrentUser(u); }} />;
+
   if (!currentUser.org_id && currentUser.role === 'admin') return <Onboarding user={currentUser} onComplete={setCurrentUser} />;
   if (currentUser.role === 'tenant') return <TenantPortal user={currentUser} onLogout={() => { localStorage.removeItem('fm_engine_user'); setCurrentUser(null); }} />;
 

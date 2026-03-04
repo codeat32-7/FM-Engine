@@ -32,13 +32,14 @@ export default async function handler(req: Request) {
     const phoneSuffix = rawDigits.slice(-10);
 
     let targetOrgId: string | null = null;
+    let targetSiteId: string | null = null;
     let identifiedUserType: 'profile' | 'tenant' | 'requester' | 'new' = 'new';
     let userName = '';
 
     // STEP 2: CHECK PROFILES TABLE
     const { data: profile } = await supabase
       .from('profiles')
-      .select('org_id, full_name')
+      .select('org_id, full_name, site_id')
       .ilike('phone', `%${phoneSuffix}`)
       .maybeSingle();
 
@@ -46,13 +47,24 @@ export default async function handler(req: Request) {
       targetOrgId = profile.org_id;
       identifiedUserType = 'profile';
       userName = profile.full_name || '';
+      targetSiteId = profile.site_id;
+      
+      // Try to find a site for this profile via tenant table if not in profile
+      if (!targetSiteId) {
+        const { data: tenantForProfile } = await supabase
+          .from('tenants')
+          .select('site_id')
+          .ilike('phone', `%${phoneSuffix}`)
+          .maybeSingle();
+        if (tenantForProfile) targetSiteId = tenantForProfile.site_id;
+      }
     }
 
-    // STEP 3: IF NOT FOUND, CHECK TENANT TABLE
-    if (!targetOrgId) {
+    // STEP 3: IF NOT FOUND IN PROFILES (OR NO SITE FOUND FOR PROFILE), CHECK TENANT TABLE
+    if (!targetSiteId) {
       const { data: tenant } = await supabase
         .from('tenants')
-        .select('org_id, name')
+        .select('org_id, name, site_id')
         .ilike('phone', `%${phoneSuffix}`)
         .maybeSingle();
 
@@ -60,10 +72,11 @@ export default async function handler(req: Request) {
         targetOrgId = tenant.org_id;
         identifiedUserType = 'tenant';
         userName = tenant.name || '';
+        targetSiteId = tenant.site_id;
       }
     }
 
-    // STEP 4: IF NOT FOUND, CHECK REQUESTER TABLE
+    // STEP 4: IF STILL NOT FOUND, CHECK REQUESTER TABLE
     if (!targetOrgId) {
       const { data: requester } = await supabase
         .from('requesters')
@@ -77,13 +90,13 @@ export default async function handler(req: Request) {
       }
     }
 
-    // STEP 5: IF NO MATCH EXISTS IN ANY TABLE
+    // STEP 5: IF NO MATCH EXISTS IN ANY TABLE (NEW USER)
     if (!targetOrgId) {
       // Retrieve the most recently created Organization
       const { data: latestOrg } = await supabase
         .from('organizations')
         .select('id, name')
-        .order('id', { ascending: false })
+        .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
 
@@ -94,13 +107,26 @@ export default async function handler(req: Request) {
       targetOrgId = latestOrg.id;
       identifiedUserType = 'new';
 
-      // Create a new Requester record (Acts as the approval record)
+      // Create a new Requester record
       await supabase.from('requesters').insert([{
-        phone: rawDigits, // Store the full number for Twilio replies
+        phone: rawDigits,
         org_id: targetOrgId,
         status: 'pending',
         created_at: new Date().toISOString()
       }]);
+    }
+
+    // FALLBACK FOR SITE ID: If we still don't have a site_id (e.g. new user or profile with no tenant record)
+    // assign the most recently created site in the organization
+    if (targetOrgId && !targetSiteId) {
+      const { data: latestSite } = await supabase
+        .from('sites')
+        .select('id')
+        .eq('org_id', targetOrgId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (latestSite) targetSiteId = latestSite.id;
     }
 
     // GET ORG NAME FOR RESPONSE
@@ -132,6 +158,7 @@ export default async function handler(req: Request) {
     await supabase.from('service_requests').insert([{
       id: srId,
       org_id: targetOrgId,
+      site_id: targetSiteId,
       title: title,
       description: cleanBody,
       requester_phone: from,
