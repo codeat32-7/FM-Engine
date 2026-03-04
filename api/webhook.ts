@@ -33,66 +33,69 @@ export default async function handler(req: Request) {
 
     let targetOrgId: string | null = null;
     let targetSiteId: string | null = null;
-    let identifiedUserType: 'profile' | 'tenant' | 'requester' | 'new' = 'new';
+    let identifiedUserType: 'admin' | 'tenant' | 'pending' | 'new' = 'new';
     let userName = '';
+    let adminSiteCount = 0;
+    let orgSites: { id: string, name: string }[] = [];
 
-    // STEP 2: CHECK PROFILES TABLE
-    const { data: profile } = await supabase
+    // STEP 2: IDENTIFY USER
+    // Check Profiles (Admin/Staff)
+    const { data: profiles } = await supabase
       .from('profiles')
-      .select('org_id, full_name, site_id')
+      .select('org_id, full_name')
       .ilike('phone', `%${phoneSuffix}`)
-      .maybeSingle();
+      .limit(1);
 
-    if (profile && profile.org_id) {
+    if (profiles && profiles.length > 0) {
+      const profile = profiles[0];
       targetOrgId = profile.org_id;
-      identifiedUserType = 'profile';
+      identifiedUserType = 'admin';
       userName = profile.full_name || '';
-      targetSiteId = profile.site_id;
-      
-      // Try to find a site for this profile via tenant table if not in profile
-      if (!targetSiteId) {
-        const { data: tenantForProfile } = await supabase
-          .from('tenants')
-          .select('site_id')
-          .ilike('phone', `%${phoneSuffix}`)
-          .maybeSingle();
-        if (tenantForProfile) targetSiteId = tenantForProfile.site_id;
-      }
-    }
 
-    // STEP 3: IF NOT FOUND IN PROFILES (OR NO SITE FOUND FOR PROFILE), CHECK TENANT TABLE
-    if (!targetSiteId) {
-      const { data: tenant } = await supabase
+      // For Admins, check how many sites they have
+      const { data: sites } = await supabase
+        .from('sites')
+        .select('id, name')
+        .eq('org_id', targetOrgId);
+      
+      orgSites = sites || [];
+      adminSiteCount = orgSites.length;
+
+      if (adminSiteCount === 1) {
+        targetSiteId = orgSites[0].id;
+      }
+      // If > 1, targetSiteId remains null (Admin will assign in dashboard)
+    } else {
+      // Check Tenants (Residents)
+      const { data: tenants } = await supabase
         .from('tenants')
         .select('org_id, name, site_id')
         .ilike('phone', `%${phoneSuffix}`)
-        .maybeSingle();
+        .limit(1);
 
-      if (tenant && tenant.org_id) {
+      if (tenants && tenants.length > 0) {
+        const tenant = tenants[0];
         targetOrgId = tenant.org_id;
+        targetSiteId = tenant.site_id;
         identifiedUserType = 'tenant';
         userName = tenant.name || '';
-        targetSiteId = tenant.site_id;
+      } else {
+        // Check Requesters (Pending)
+        const { data: requesters } = await supabase
+          .from('requesters')
+          .select('org_id')
+          .ilike('phone', `%${phoneSuffix}`)
+          .limit(1);
+
+        if (requesters && requesters.length > 0) {
+          targetOrgId = requesters[0].org_id;
+          identifiedUserType = 'pending';
+        }
       }
     }
 
-    // STEP 4: IF STILL NOT FOUND, CHECK REQUESTER TABLE
+    // STEP 3: HANDLE NEW USERS
     if (!targetOrgId) {
-      const { data: requester } = await supabase
-        .from('requesters')
-        .select('org_id')
-        .ilike('phone', `%${phoneSuffix}`)
-        .maybeSingle();
-
-      if (requester && requester.org_id) {
-        targetOrgId = requester.org_id;
-        identifiedUserType = 'requester';
-      }
-    }
-
-    // STEP 5: IF NO MATCH EXISTS IN ANY TABLE (NEW USER)
-    if (!targetOrgId) {
-      // Retrieve the most recently created Organization
       const { data: latestOrg } = await supabase
         .from('organizations')
         .select('id, name')
@@ -107,26 +110,12 @@ export default async function handler(req: Request) {
       targetOrgId = latestOrg.id;
       identifiedUserType = 'new';
 
-      // Create a new Requester record
       await supabase.from('requesters').insert([{
         phone: rawDigits,
         org_id: targetOrgId,
         status: 'pending',
         created_at: new Date().toISOString()
       }]);
-    }
-
-    // FALLBACK FOR SITE ID: If we still don't have a site_id (e.g. new user or profile with no tenant record)
-    // assign the most recently created site in the organization
-    if (targetOrgId && !targetSiteId) {
-      const { data: latestSite } = await supabase
-        .from('sites')
-        .select('id')
-        .eq('org_id', targetOrgId)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (latestSite) targetSiteId = latestSite.id;
     }
 
     // GET ORG NAME FOR RESPONSE
@@ -172,9 +161,20 @@ export default async function handler(req: Request) {
     
     if (identifiedUserType === 'new') {
       reply = `✅ Welcome! Ticket ${srId} logged for ${orgInfo?.name}. As you are a new contact, an administrator will verify your access shortly.`;
-    } else if (identifiedUserType === 'profile' || identifiedUserType === 'tenant') {
-      reply = `✅ Hello ${userName || 'Resident'}! Ticket ${srId} has been logged to the ${orgInfo?.name} dashboard.`;
-    } else if (identifiedUserType === 'requester') {
+    } else if (identifiedUserType === 'admin') {
+      if (adminSiteCount > 1 && !targetSiteId) {
+        const siteList = orgSites.map((s, i) => `${i + 1}. ${s.name}`).join('\n');
+        reply = `✅ Hello ${userName}! Ticket ${srId} logged to ${orgInfo?.name}. 
+        
+⚠️ Since you manage multiple sites, please assign the correct site in the dashboard.
+Available sites:
+${siteList}`;
+      } else {
+        reply = `✅ Hello ${userName}! Ticket ${srId} has been logged to the ${orgInfo?.name} dashboard.`;
+      }
+    } else if (identifiedUserType === 'tenant') {
+      reply = `✅ Hello ${userName}! Ticket ${srId} has been logged for your facility at ${orgInfo?.name}.`;
+    } else if (identifiedUserType === 'pending') {
       reply = `✅ Ticket ${srId} logged for ${orgInfo?.name}. Note: Your contact is still pending administrator approval.`;
     }
 

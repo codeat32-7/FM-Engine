@@ -38,18 +38,19 @@ const Onboarding: React.FC<{ user: UserProfile, onComplete: (user: UserProfile) 
       const { data: org, error: orgErr } = await supabase.from('organizations').insert([{ name: orgName }]).select().single();
       if (orgErr) throw orgErr;
 
-      const { error: siteErr } = await supabase.from('sites').insert([{
+      const { data: site, error: siteErr } = await supabase.from('sites').insert([{
         org_id: org.id,
         name: siteName,
         location: siteLocation,
         code: `SITE-${Math.floor(1000 + Math.random() * 9000)}`,
         status: Status.ACTIVE
-      }]);
+      }]).select().single();
       if (siteErr) throw siteErr;
 
       const { error: profErr } = await supabase.from('profiles').upsert({
         id: user.id,
         org_id: org.id,
+        site_id: site.id,
         phone: cleanPhone,
         full_name: adminName,
         role: 'admin'
