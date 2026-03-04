@@ -198,8 +198,8 @@ const SRDetail: React.FC<SRDetailProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 md:p-6">
-      <div className="bg-white w-full max-w-5xl h-[90vh] rounded-[40px] shadow-2xl overflow-hidden flex flex-col md:flex-row">
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-0 md:p-6">
+      <div className="bg-white w-full max-w-5xl h-full md:h-[90vh] rounded-none md:rounded-[40px] shadow-2xl overflow-hidden flex flex-col md:flex-row">
         
         {/* Left Side: SR Info */}
         <div className="flex-1 overflow-y-auto p-8 border-r border-slate-100">

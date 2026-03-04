@@ -71,7 +71,8 @@ const SRList: React.FC<SRListProps> = ({ srs, sites, assets, tenants, requesters
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
+        {/* Desktop Table View */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50 border-bottom border-slate-100">
@@ -89,7 +90,7 @@ const SRList: React.FC<SRListProps> = ({ srs, sites, assets, tenants, requesters
                 <tr key={sr.id} onClick={() => onSelect(sr)} className="hover:bg-slate-50/50 transition-colors group cursor-pointer">
                   <td className="px-6 py-4">
                     <div className="flex flex-col gap-1.5">
-                      <span className="text-xs font-bold text-slate-400 tracking-widest uppercase">#{sr.id}</span>
+                      <span className="text-xs font-bold text-slate-400 tracking-widest uppercase">#{sr.id.slice(0, 8)}</span>
                       <span className={`inline-flex px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider w-fit ${
                         sr.status === SRStatus.NEW ? 'bg-blue-100 text-blue-700' :
                         sr.status === SRStatus.IN_PROGRESS ? 'bg-amber-100 text-amber-700' :
@@ -165,6 +166,65 @@ const SRList: React.FC<SRListProps> = ({ srs, sites, assets, tenants, requesters
               ))}
             </tbody>
           </table>
+        </div>
+
+        {/* Mobile Card View */}
+        <div className="md:hidden divide-y divide-slate-100">
+          {filteredSRs.map(sr => (
+            <div 
+              key={sr.id} 
+              onClick={() => onSelect(sr)}
+              className="p-4 active:bg-slate-50 transition-colors space-y-3"
+            >
+              <div className="flex justify-between items-start">
+                <div className="flex flex-col gap-1">
+                  <span className="text-[10px] font-black text-slate-400 tracking-widest uppercase">#{sr.id.slice(0, 8)}</span>
+                  <h3 className="text-sm font-black text-slate-900 leading-tight">{sr.title}</h3>
+                </div>
+                <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${
+                  sr.status === SRStatus.NEW ? 'bg-blue-100 text-blue-700' :
+                  sr.status === SRStatus.IN_PROGRESS ? 'bg-amber-100 text-amber-700' :
+                  sr.status === SRStatus.RESOLVED ? 'bg-emerald-100 text-emerald-700' :
+                  'bg-slate-100 text-slate-600'
+                }`}>
+                  {sr.status}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500">
+                  <MapPin size={12} className="text-slate-300" />
+                  <span className="truncate">{getSiteName(sr.site_id)}</span>
+                </div>
+                <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500">
+                  <Package size={12} className="text-slate-300" />
+                  <span className="truncate">{getAssetName(sr.asset_id)}</span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-2 border-t border-slate-50">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 bg-slate-100 rounded-full flex items-center justify-center text-slate-400">
+                    <User size={12} />
+                  </div>
+                  <span className="text-[10px] font-black text-slate-700">
+                    {tenants.find(t => t.phone === sr.requester_phone)?.name || 
+                     requesters.find(r => r.phone === sr.requester_phone)?.name || 
+                     'Unknown'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className={`flex items-center gap-1 text-[9px] font-black uppercase tracking-widest ${
+                    sr.source === SRSource.WHATSAPP ? 'text-emerald-600' : 'text-slate-400'
+                  }`}>
+                    {sr.source === SRSource.WHATSAPP ? <MessageSquare size={10} /> : <Monitor size={10} />}
+                    {sr.source}
+                  </div>
+                  <ChevronRight size={14} className="text-slate-300" />
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
 
         {filteredSRs.length === 0 && (

@@ -478,6 +478,7 @@ CREATE POLICY "Public Access" ON requesters FOR ALL USING (true);`;
     <Layout 
       activeTab={activeTab} 
       onTabChange={setActiveTab} 
+      onLogout={() => { localStorage.removeItem('fm_engine_user'); setCurrentUser(null); }}
       dbStatus={dbStatus === 'error' ? 'error' : (dbStatus === 'connected' ? 'connected' : 'connecting')} 
       tabConfigs={tabConfigs.map(t => t.id === 'requesters' && requesters.length > 0 ? { ...t, label: `Approvals (${requesters.length})` } : t)} 
       orgName={organization?.name}

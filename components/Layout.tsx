@@ -10,7 +10,8 @@ import {
   WifiOff,
   Users,
   Building,
-  UserCheck
+  UserCheck,
+  LogOut
 } from 'lucide-react';
 import { TabConfig } from '../types';
 
@@ -18,6 +19,7 @@ interface LayoutProps {
   children: React.ReactNode;
   activeTab: string;
   onTabChange: (tab: string) => void;
+  onLogout: () => void;
   dbStatus: 'connecting' | 'connected' | 'error';
   tabConfigs: TabConfig[];
   orgName?: string;
@@ -32,7 +34,7 @@ const iconMap = {
   UserCheck
 };
 
-const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange, dbStatus, tabConfigs, orgName }) => {
+const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange, onLogout, dbStatus, tabConfigs, orgName }) => {
   const visibleTabs = tabConfigs.filter(t => t.isVisible);
 
   return (
@@ -100,6 +102,13 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange, dbSta
             <Settings size={18} />
             <span>Settings</span>
           </button>
+          <button 
+             onClick={onLogout}
+             className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium text-red-500 hover:bg-red-50 transition-all mt-1"
+           >
+            <LogOut size={18} />
+            <span>Logout</span>
+          </button>
         </div>
       </aside>
 
@@ -118,6 +127,12 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange, dbSta
              <div className={`p-1.5 rounded-full ${dbStatus === 'connected' ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
                 {dbStatus === 'connected' ? <Wifi size={16} /> : <WifiOff size={16} />}
              </div>
+             <button 
+               onClick={onLogout}
+               className="p-1.5 text-slate-400 hover:text-red-500 transition-colors"
+             >
+               <LogOut size={18} />
+             </button>
           </div>
         </header>
 
