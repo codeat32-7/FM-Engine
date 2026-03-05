@@ -157,8 +157,24 @@ const SRDetail: React.FC<SRDetailProps> = ({
       const { error } = await supabase.from('sr_messages').insert([messageData]);
       if (error) throw error;
 
-      // Simulate WhatsApp sending logic
-      console.log(`Sending WhatsApp to ${sr.requester_phone}: ${newMessage}`);
+      // Trigger Outbound WhatsApp API
+      if (sr.requester_phone) {
+        const response = await fetch('/api/send-message', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            srId: sr.id,
+            phone: sr.requester_phone,
+            content: newMessage.trim()
+          })
+        });
+        
+        if (!response.ok) {
+          const errorData = await response.json();
+          console.error('WhatsApp Send Error:', errorData);
+          alert(`Failed to send WhatsApp: ${errorData.error || 'Unknown error'}`);
+        }
+      }
       
       setNewMessage('');
     } catch (err: any) {

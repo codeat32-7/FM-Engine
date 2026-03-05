@@ -125,57 +125,96 @@ export default async function handler(req: Request) {
       .eq('id', targetOrgId)
       .single();
 
-    // LOG THE SERVICE REQUEST
-    const cleanBody = body.replace(/join\s+[a-z-]+\s*/gi, '').trim();
-    let title = cleanBody.slice(0, 40) || 'Maintenance Request';
-    
-    // AI Title Generation
-    if (process.env.API_KEY && cleanBody.length > 5) {
+    // STEP 3: IDENTIFY INTENT WITH AI
+    let intent: 'NEW' | 'UPDATE' | 'QUERY' = 'NEW';
+    let targetSrId: string | null = null;
+    let aiTitle = '';
+
+    // Fetch open SRs for this phone to provide context to AI
+    const { data: openSrs } = await supabase
+      .from('service_requests')
+      .select('id, title, status')
+      .ilike('requester_phone', `%${phoneSuffix}`)
+      .neq('status', 'Closed')
+      .order('created_at', { ascending: false });
+
+    const geminiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
+    if (geminiKey) {
       try {
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const ai = new GoogleGenAI({ apiKey: geminiKey });
+        const context = openSrs && openSrs.length > 0 
+          ? `User Name: ${userName || 'Unknown'}. Active tickets for this user: ${openSrs.map(s => `[${s.id}: ${s.title}]`).join(', ')}`
+          : `User Name: ${userName || 'Unknown'}. No active tickets.`;
+
+        const prompt = `
+          User Message: "${body}"
+          ${context}
+          
+          Classify this message into one of these types:
+          1. NEW: User is reporting a new issue.
+          2. UPDATE: User is providing more info or asking about an existing ticket listed above.
+          3. QUERY: General greeting or question not related to a specific maintenance issue.
+
+          If UPDATE, specify which Ticket ID it refers to.
+          If NEW, provide a 3-word title for the request.
+
+          Return ONLY a JSON object: {"type": "NEW" | "UPDATE" | "QUERY", "ticketId": "SR-XXXXXX" | null, "title": "string" | null}
+        `;
+
         const res = await ai.models.generateContent({
           model: 'gemini-3-flash-preview',
-          contents: `Summarize this maintenance request into a 3-word title: "${cleanBody}"`,
+          contents: prompt,
+          config: { responseMimeType: 'application/json' }
         });
-        if (res.text) title = res.text.trim().replace(/[".*]/g, '');
+
+        if (res.text) {
+          const result = JSON.parse(res.text);
+          intent = result.type;
+          targetSrId = result.ticketId;
+          aiTitle = result.title || '';
+        }
       } catch (e) {
-        console.error('AI Processing Error:', e);
+        console.error('AI Classification Error:', e);
       }
     }
 
-    const srId = `SR-${Math.floor(100000 + Math.random() * 900000)}`;
-    await supabase.from('service_requests').insert([{
-      id: srId,
-      org_id: targetOrgId,
-      site_id: targetSiteId,
-      title: title,
-      description: cleanBody,
-      requester_phone: from,
-      status: 'New',
-      source: 'WhatsApp',
-      created_at: new Date().toISOString()
-    }]);
+    // STEP 4: EXECUTE INTENT
+    let reply = '';
+    const cleanBody = body.replace(/join\s+[a-z-]+\s*/gi, '').trim();
 
-    // PREPARE TWILIO RESPONSE
-    let reply = `✅ Ticket ${srId} logged for ${orgInfo?.name || 'Facility'}.`;
-    
-    if (identifiedUserType === 'new') {
-      reply = `✅ Welcome! Ticket ${srId} logged for ${orgInfo?.name}. As you are a new contact, an administrator will verify your access shortly.`;
-    } else if (identifiedUserType === 'admin') {
-      if (adminSiteCount > 1 && !targetSiteId) {
-        const siteList = orgSites.map((s, i) => `${i + 1}. ${s.name}`).join('\n');
-        reply = `✅ Hello ${userName}! Ticket ${srId} logged to ${orgInfo?.name}. 
-        
-⚠️ Since you manage multiple sites, please assign the correct site in the dashboard.
-Available sites:
-${siteList}`;
+    if (intent === 'UPDATE' && targetSrId) {
+      // Add message to existing SR
+      await supabase.from('sr_messages').insert([{
+        sr_id: targetSrId,
+        org_id: targetOrgId,
+        sender_id: from,
+        sender_role: 'tenant',
+        content: cleanBody,
+        is_whatsapp: true
+      }]);
+      reply = `📝 Message added to Ticket ${targetSrId}. We'll get back to you soon!`;
+    } else if (intent === 'QUERY') {
+      reply = `👋 Hello! I'm the FM Engine assistant for ${orgInfo?.name}. To report a maintenance issue, just describe it here.`;
+    } else {
+      // Create NEW SR
+      const srId = `SR-${Math.floor(100000 + Math.random() * 900000)}`;
+      await supabase.from('service_requests').insert([{
+        id: srId,
+        org_id: targetOrgId,
+        site_id: targetSiteId,
+        title: aiTitle || cleanBody.slice(0, 40),
+        description: cleanBody,
+        requester_phone: from,
+        status: 'New',
+        source: 'WhatsApp',
+        created_at: new Date().toISOString()
+      }]);
+
+      if (identifiedUserType === 'new') {
+        reply = `✅ Welcome! Ticket ${srId} logged for ${orgInfo?.name}. An administrator will verify your access shortly.`;
       } else {
-        reply = `✅ Hello ${userName}! Ticket ${srId} has been logged to the ${orgInfo?.name} dashboard.`;
+        reply = `✅ Ticket ${srId} logged for ${orgInfo?.name}. We'll update you as we progress.`;
       }
-    } else if (identifiedUserType === 'tenant') {
-      reply = `✅ Hello ${userName}! Ticket ${srId} has been logged for your facility at ${orgInfo?.name}.`;
-    } else if (identifiedUserType === 'pending') {
-      reply = `✅ Ticket ${srId} logged for ${orgInfo?.name}. Note: Your contact is still pending administrator approval.`;
     }
 
     return new Response(`<?xml version="1.0" encoding="UTF-8"?><Response><Message>${reply}</Message></Response>`, {
