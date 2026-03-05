@@ -155,10 +155,14 @@ export default async function handler(req: Request) {
           2. UPDATE: User is providing more info or asking about an existing ticket listed above.
           3. QUERY: General greeting or question not related to a specific maintenance issue.
 
-          If UPDATE, specify which Ticket ID it refers to.
-          If NEW, provide a 3-word title for the request.
+          If UPDATE, specify which Ticket ID it refers to and the title of that ticket.
+          If NEW, provide a short, descriptive name for the issue (e.g., "leaking sink", "AC unit issue").
 
-          Return ONLY a JSON object: {"type": "NEW" | "UPDATE" | "QUERY", "ticketId": "SR-XXXXXX" | null, "title": "string" | null}
+          Return ONLY a JSON object: {
+            "type": "NEW" | "UPDATE" | "QUERY", 
+            "ticketId": "SR-XXXXXX" | null, 
+            "title": "string" | null
+          }
         `;
 
         const res = await ai.models.generateContent({
@@ -192,17 +196,19 @@ export default async function handler(req: Request) {
         content: cleanBody,
         is_whatsapp: true
       }]);
-      reply = `📝 Message added to Ticket ${targetSrId}. We'll get back to you soon!`;
+      reply = `📝 Message added to Ticket ${targetSrId} regarding the ${aiTitle || 'issue'}. We'll get back to you soon!`;
     } else if (intent === 'QUERY') {
       reply = `👋 Hello! I'm the FM Engine assistant for ${orgInfo?.name}. To report a maintenance issue, just describe it here.`;
     } else {
       // Create NEW SR
       const srId = `SR-${Math.floor(100000 + Math.random() * 900000)}`;
+      const finalTitle = aiTitle || cleanBody.slice(0, 40);
+      
       await supabase.from('service_requests').insert([{
         id: srId,
         org_id: targetOrgId,
         site_id: targetSiteId,
-        title: aiTitle || cleanBody.slice(0, 40),
+        title: finalTitle,
         description: cleanBody,
         requester_phone: from,
         status: 'New',
@@ -211,9 +217,9 @@ export default async function handler(req: Request) {
       }]);
 
       if (identifiedUserType === 'new') {
-        reply = `✅ Welcome! Ticket ${srId} logged for ${orgInfo?.name}. An administrator will verify your access shortly.`;
+        reply = `✅ Welcome! Ticket ${srId} logged for ${orgInfo?.name} regarding the ${finalTitle}. An administrator will verify your access shortly.`;
       } else {
-        reply = `✅ Ticket ${srId} logged for ${orgInfo?.name}. We'll update you as we progress.`;
+        reply = `✅ Ticket ${srId} logged for ${orgInfo?.name} regarding the ${finalTitle}. We'll update you as we progress.`;
       }
     }
 
