@@ -428,7 +428,12 @@ CREATE POLICY "Public Access" ON assets FOR ALL USING (true);
 CREATE POLICY "Public Access" ON tenants FOR ALL USING (true);
 CREATE POLICY "Public Access" ON service_requests FOR ALL USING (true);
 CREATE POLICY "Public Access" ON sr_messages FOR ALL USING (true);
-CREATE POLICY "Public Access" ON requesters FOR ALL USING (true);`;
+CREATE POLICY "Public Access" ON requesters FOR ALL USING (true);
+  
+-- Ensure missing columns exist in case of partial setup
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS site_id UUID REFERENCES sites(id) ON DELETE SET NULL;
+ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS site_id UUID REFERENCES sites(id) ON DELETE SET NULL;
+ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS asset_id UUID REFERENCES assets(id) ON DELETE SET NULL;`;
 
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6 text-white">

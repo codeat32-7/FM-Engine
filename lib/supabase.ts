@@ -33,16 +33,26 @@ export const checkSchemaReady = async (): Promise<ConnectionStatus> => {
       return { connected: false, error: orgErr.message };
     }
 
-    // 2. Check for profiles
-    const { error: profErr } = await supabase.from('profiles').select('id').limit(1);
-    if (profErr && (profErr.message?.includes('does not exist') || profErr.code === '42P01')) {
-       return { connected: false, needsSetup: true, error: "Profiles table not found." };
+    // 2. Check for profiles and its columns
+    const { error: profErr } = await supabase.from('profiles').select('id, site_id').limit(1);
+    if (profErr) {
+      if (profErr.message?.includes('does not exist') || profErr.code === '42P01') {
+        return { connected: false, needsSetup: true, error: "Profiles table not found." };
+      }
+      if (profErr.message?.includes('column "site_id" does not exist') || profErr.code === '42703' || profErr.message?.includes('site_id')) {
+        return { connected: false, needsSetup: true, error: "Profiles table is missing 'site_id' column." };
+      }
     }
 
-    // 3. Check for service_requests
-    const { error: srErr } = await supabase.from('service_requests').select('id').limit(1);
-    if (srErr && (srErr.message?.includes('does not exist') || srErr.code === '42P01')) {
-      return { connected: false, needsSetup: true, error: "Service Requests table not found." };
+    // 3. Check for service_requests and its columns
+    const { error: srErr } = await supabase.from('service_requests').select('id, site_id, asset_id').limit(1);
+    if (srErr) {
+      if (srErr.message?.includes('does not exist') || srErr.code === '42P01') {
+        return { connected: false, needsSetup: true, error: "Service Requests table not found." };
+      }
+      if (srErr.message?.includes('column') || srErr.code === '42703') {
+        return { connected: false, needsSetup: true, error: "Service Requests table is missing columns." };
+      }
     }
     
     return { connected: true };
