@@ -6,6 +6,12 @@ export const config = {
   runtime: 'edge',
 };
 
+/** e.g. SITE-1234 or SITE-598 — matches `sites.code` in your DB */
+function extractSiteCodeFromBody(text: string): string | null {
+  const m = text.match(/\b(SITE-[A-Za-z0-9]+)\b/i);
+  return m ? m[1].toUpperCase() : null;
+}
+
 export default async function handler(req: Request) {
   if (req.method !== 'POST') {
     return new Response('Method Not Allowed', { status: 405 });
@@ -43,7 +49,7 @@ export default async function handler(req: Request) {
     const { data: profiles } = await supabase
       .from('profiles')
       .select('org_id, full_name')
-      .ilike('phone', `%${phoneSuffix}`)
+      .or(`phone.eq.${rawDigits},phone.ilike.%${phoneSuffix}%`)
       .limit(1);
 
     if (profiles && profiles.length > 0) {
@@ -70,7 +76,7 @@ export default async function handler(req: Request) {
       const { data: tenants } = await supabase
         .from('tenants')
         .select('org_id, name, site_id')
-        .ilike('phone', `%${phoneSuffix}`)
+        .or(`phone.eq.${rawDigits},phone.ilike.%${phoneSuffix}%`)
         .limit(1);
 
       if (tenants && tenants.length > 0) {
@@ -84,7 +90,7 @@ export default async function handler(req: Request) {
         const { data: requesters } = await supabase
           .from('requesters')
           .select('org_id')
-          .ilike('phone', `%${phoneSuffix}`)
+          .or(`phone.eq.${rawDigits},phone.ilike.%${phoneSuffix}%`)
           .limit(1);
 
         if (requesters && requesters.length > 0) {
@@ -94,28 +100,73 @@ export default async function handler(req: Request) {
       }
     }
 
-    // STEP 3: HANDLE NEW USERS
+    // STEP 3: UNKNOWN SENDER — route by site code in message, then env default org, then latest org (last resort)
     if (!targetOrgId) {
-      const { data: latestOrg } = await supabase
-        .from('organizations')
-        .select('id, name')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      const siteCodeHint = extractSiteCodeFromBody(body);
+      if (siteCodeHint) {
+        const { data: siteRow } = await supabase
+          .from('sites')
+          .select('id, org_id, code')
+          .ilike('code', siteCodeHint)
+          .maybeSingle();
 
-      if (!latestOrg) {
-        return new Response('Configuration Error: No organizations exist.', { status: 500 });
+        if (siteRow?.org_id) {
+          targetOrgId = siteRow.org_id;
+          targetSiteId = siteRow.id;
+          identifiedUserType = 'new';
+        }
       }
 
-      targetOrgId = latestOrg.id;
-      identifiedUserType = 'new';
+      const envOrg = process.env.WEBHOOK_DEFAULT_ORG_ID?.trim();
+      if (!targetOrgId && envOrg) {
+        targetOrgId = envOrg;
+        const envSite = process.env.WEBHOOK_DEFAULT_SITE_ID?.trim();
+        if (envSite) {
+          targetSiteId = envSite;
+        } else {
+          const { data: oneSite } = await supabase
+            .from('sites')
+            .select('id')
+            .eq('org_id', envOrg)
+            .limit(1)
+            .maybeSingle();
+          if (oneSite) targetSiteId = oneSite.id;
+        }
+        identifiedUserType = 'new';
+      }
 
-      await supabase.from('requesters').insert([{
-        phone: rawDigits,
-        org_id: targetOrgId,
-        status: 'pending',
-        created_at: new Date().toISOString()
-      }]);
+      if (!targetOrgId) {
+        const { data: latestOrg } = await supabase
+          .from('organizations')
+          .select('id, name')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (!latestOrg) {
+          return new Response('Configuration Error: No organizations exist.', { status: 500 });
+        }
+
+        targetOrgId = latestOrg.id;
+        identifiedUserType = 'new';
+      }
+
+      // Queue unknown contact for the org we resolved (site code / env / latest)
+      const { data: existingReq } = await supabase
+        .from('requesters')
+        .select('id')
+        .eq('phone', rawDigits)
+        .eq('org_id', targetOrgId)
+        .maybeSingle();
+
+      if (!existingReq && identifiedUserType === 'new') {
+        await supabase.from('requesters').insert([{
+          phone: rawDigits,
+          org_id: targetOrgId!,
+          status: 'pending',
+          created_at: new Date().toISOString()
+        }]);
+      }
     }
 
     // GET ORG NAME FOR RESPONSE

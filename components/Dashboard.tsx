@@ -20,12 +20,16 @@ const Dashboard: React.FC<DashboardProps> = ({ srs, onNewRequest, assets, organi
 
   const avgResolve = useMemo(() => formatMeanResolution(meanResolutionHours(srs)), [srs]);
 
-  /** Twilio *sandbox* requires their exact phrase (e.g. `join bad-color`), not your DB site code. */
+  /** Twilio sandbox requires their exact keyword phrase (e.g. `join bad-color`).
+   * We append the first site's code as a routing hint so the webhook can assign the right org/site.
+   */
   const sandboxJoin =
     (import.meta.env.VITE_TWILIO_SANDBOX_JOIN as string | undefined)?.trim() || 'join bad-color';
+  const primarySiteCode = sites[0]?.code;
+  const sandboxJoinWithSiteHint = primarySiteCode ? `${sandboxJoin} ${primarySiteCode}` : sandboxJoin;
   const waDigits =
     (import.meta.env.VITE_TWILIO_WHATSAPP_NUMBER as string | undefined)?.replace(/\D/g, '') || '14155238886';
-  const whatsappUrl = `https://wa.me/${waDigits}?text=${encodeURIComponent(sandboxJoin)}`;
+  const whatsappUrl = `https://wa.me/${waDigits}?text=${encodeURIComponent(sandboxJoinWithSiteHint)}`;
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(whatsappUrl)}&ecc=M&margin=8&color=0c1222`;
 
   const handleShare = async () => {
@@ -87,21 +91,8 @@ const Dashboard: React.FC<DashboardProps> = ({ srs, onNewRequest, assets, organi
               <p className="text-[10px] font-semibold text-fm-accent uppercase tracking-widest">Resident intake</p>
               <h3 className="text-xl md:text-2xl font-bold mt-2 leading-snug">WhatsApp maintenance line</h3>
               <p className="text-slate-400 text-sm mt-2 max-w-md leading-relaxed">
-                QR/link opens WhatsApp with Twilio&apos;s sandbox keyword:{' '}
-                <span className="text-white font-mono font-semibold">{sandboxJoin}</span>
-                {sites.length > 0 && (
-                  <>
-                    . After connecting, ask residents to mention their{' '}
-                    <span className="text-slate-300">site code</span> (e.g.{' '}
-                    {sites.map((s, i) => (
-                      <span key={s.id} className="font-mono text-fm-accent">
-                        {s.code}
-                        {i < sites.length - 1 ? ', ' : ''}
-                      </span>
-                    ))}
-                    ) so you can route tickets in the webhook.
-                  </>
-                )}
+                QR/link pre-fills WhatsApp for Twilio sandbox with:{' '}
+                <span className="text-white font-mono font-semibold">{sandboxJoinWithSiteHint}</span>
               </p>
             </div>
             <button
