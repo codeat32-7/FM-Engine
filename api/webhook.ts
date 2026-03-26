@@ -6,12 +6,6 @@ export const config = {
   runtime: 'edge',
 };
 
-/** e.g. SITE-1234 or SITE-598 — matches `sites.code` in your DB */
-function extractSiteCodeFromBody(text: string): string | null {
-  const m = text.match(/\b(SITE-[A-Za-z0-9]+)\b/i);
-  return m ? m[1].toUpperCase() : null;
-}
-
 export default async function handler(req: Request) {
   if (req.method !== 'POST') {
     return new Response('Method Not Allowed', { status: 405 });
@@ -49,7 +43,7 @@ export default async function handler(req: Request) {
     const { data: profiles } = await supabase
       .from('profiles')
       .select('org_id, full_name')
-      .or(`phone.eq.${rawDigits},phone.ilike.%${phoneSuffix}%`)
+      .ilike('phone', `%${phoneSuffix}%`)
       .limit(1);
 
     if (profiles && profiles.length > 0) {
@@ -76,7 +70,7 @@ export default async function handler(req: Request) {
       const { data: tenants } = await supabase
         .from('tenants')
         .select('org_id, name, site_id')
-        .or(`phone.eq.${rawDigits},phone.ilike.%${phoneSuffix}%`)
+        .ilike('phone', `%${phoneSuffix}%`)
         .limit(1);
 
       if (tenants && tenants.length > 0) {
@@ -90,7 +84,7 @@ export default async function handler(req: Request) {
         const { data: requesters } = await supabase
           .from('requesters')
           .select('org_id')
-          .or(`phone.eq.${rawDigits},phone.ilike.%${phoneSuffix}%`)
+          .ilike('phone', `%${phoneSuffix}%`)
           .limit(1);
 
         if (requesters && requesters.length > 0) {
@@ -100,103 +94,28 @@ export default async function handler(req: Request) {
       }
     }
 
-    // STEP 3: UNKNOWN SENDER — deterministic routing for Twilio sandbox
-    // 1) Reuse an existing `requesters` mapping for stability
-    // 2) Use env defaults (`WEBHOOK_DEFAULT_ORG_ID`, `WEBHOOK_DEFAULT_SITE_ID`) if set
-    // 3) If you are not in sandbox, optionally route by `sites.code` hint in body (e.g. SITE-123)
-    // 4) Last resort: latest organization (demo fallback)
+    // STEP 3: HANDLE NEW USERS
     if (!targetOrgId) {
-      const { data: existingRequester } = await supabase
-        .from('requesters')
-        .select('org_id')
-        .or(`phone.eq.${rawDigits},phone.ilike.%${phoneSuffix}%`)
-        .limit(1);
+      const { data: latestOrg } = await supabase
+        .from('organizations')
+        .select('id, name')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
-      if (existingRequester && existingRequester.length > 0) {
-        targetOrgId = existingRequester[0].org_id;
-        identifiedUserType = 'pending';
-
-        const { data: oneSite } = await supabase
-          .from('sites')
-          .select('id')
-          .eq('org_id', targetOrgId)
-          .limit(1)
-          .maybeSingle();
-        if (oneSite) targetSiteId = oneSite.id;
-      } else {
-        const envOrg = process.env.WEBHOOK_DEFAULT_ORG_ID?.trim();
-        const envSite = process.env.WEBHOOK_DEFAULT_SITE_ID?.trim();
-
-        // Env defaults (most reliable for sandbox because body cannot carry routing)
-        if (envOrg) {
-          targetOrgId = envOrg;
-          identifiedUserType = 'new';
-
-          if (envSite) {
-            targetSiteId = envSite;
-          } else {
-            const { data: oneSite } = await supabase
-              .from('sites')
-              .select('id')
-              .eq('org_id', envOrg)
-              .limit(1)
-              .maybeSingle();
-            if (oneSite) targetSiteId = oneSite.id;
-          }
-        }
-
-        // Optional site-code routing for non-sandbox
-        if (!targetOrgId) {
-          const siteCodeHint = extractSiteCodeFromBody(body);
-          if (siteCodeHint) {
-            const { data: siteRow } = await supabase
-              .from('sites')
-              .select('id, org_id, code')
-              .ilike('code', siteCodeHint)
-              .maybeSingle();
-
-            if (siteRow?.org_id) {
-              targetOrgId = siteRow.org_id;
-              targetSiteId = siteRow.id;
-              identifiedUserType = 'new';
-            }
-          }
-        }
-
-        // Last resort: newest org
-        if (!targetOrgId) {
-          const { data: latestOrg } = await supabase
-            .from('organizations')
-            .select('id, name')
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-
-          if (!latestOrg) {
-            return new Response('Configuration Error: No organizations exist.', { status: 500 });
-          }
-
-          targetOrgId = latestOrg.id;
-          identifiedUserType = 'new';
-        }
-
-        // Queue unknown contact for the resolved org
-        const { data: existingReq } = await supabase
-          .from('requesters')
-          .select('id')
-          .eq('phone', rawDigits)
-          .eq('org_id', targetOrgId)
-          .maybeSingle();
-
-        if (!existingReq) {
-          await supabase.from('requesters').insert([{
-            phone: rawDigits,
-            org_id: targetOrgId!,
-            status: 'pending',
-            created_at: new Date().toISOString()
-          }]);
-        }
+      if (!latestOrg) {
+        return new Response('Configuration Error: No organizations exist.', { status: 500 });
       }
+
+      targetOrgId = latestOrg.id;
+      identifiedUserType = 'new';
+
+      await supabase.from('requesters').insert([{
+        phone: rawDigits,
+        org_id: targetOrgId,
+        status: 'pending',
+        created_at: new Date().toISOString()
+      }]);
     }
 
     // GET ORG NAME FOR RESPONSE
