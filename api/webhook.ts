@@ -100,72 +100,102 @@ export default async function handler(req: Request) {
       }
     }
 
-    // STEP 3: UNKNOWN SENDER — route by site code in message, then env default org, then latest org (last resort)
+    // STEP 3: UNKNOWN SENDER — deterministic routing for Twilio sandbox
+    // 1) Reuse an existing `requesters` mapping for stability
+    // 2) Use env defaults (`WEBHOOK_DEFAULT_ORG_ID`, `WEBHOOK_DEFAULT_SITE_ID`) if set
+    // 3) If you are not in sandbox, optionally route by `sites.code` hint in body (e.g. SITE-123)
+    // 4) Last resort: latest organization (demo fallback)
     if (!targetOrgId) {
-      const siteCodeHint = extractSiteCodeFromBody(body);
-      if (siteCodeHint) {
-        const { data: siteRow } = await supabase
+      const { data: existingRequester } = await supabase
+        .from('requesters')
+        .select('org_id')
+        .or(`phone.eq.${rawDigits},phone.ilike.%${phoneSuffix}%`)
+        .limit(1);
+
+      if (existingRequester && existingRequester.length > 0) {
+        targetOrgId = existingRequester[0].org_id;
+        identifiedUserType = 'pending';
+
+        const { data: oneSite } = await supabase
           .from('sites')
-          .select('id, org_id, code')
-          .ilike('code', siteCodeHint)
-          .maybeSingle();
-
-        if (siteRow?.org_id) {
-          targetOrgId = siteRow.org_id;
-          targetSiteId = siteRow.id;
-          identifiedUserType = 'new';
-        }
-      }
-
-      const envOrg = process.env.WEBHOOK_DEFAULT_ORG_ID?.trim();
-      if (!targetOrgId && envOrg) {
-        targetOrgId = envOrg;
-        const envSite = process.env.WEBHOOK_DEFAULT_SITE_ID?.trim();
-        if (envSite) {
-          targetSiteId = envSite;
-        } else {
-          const { data: oneSite } = await supabase
-            .from('sites')
-            .select('id')
-            .eq('org_id', envOrg)
-            .limit(1)
-            .maybeSingle();
-          if (oneSite) targetSiteId = oneSite.id;
-        }
-        identifiedUserType = 'new';
-      }
-
-      if (!targetOrgId) {
-        const { data: latestOrg } = await supabase
-          .from('organizations')
-          .select('id, name')
-          .order('created_at', { ascending: false })
+          .select('id')
+          .eq('org_id', targetOrgId)
           .limit(1)
           .maybeSingle();
+        if (oneSite) targetSiteId = oneSite.id;
+      } else {
+        const envOrg = process.env.WEBHOOK_DEFAULT_ORG_ID?.trim();
+        const envSite = process.env.WEBHOOK_DEFAULT_SITE_ID?.trim();
 
-        if (!latestOrg) {
-          return new Response('Configuration Error: No organizations exist.', { status: 500 });
+        // Env defaults (most reliable for sandbox because body cannot carry routing)
+        if (envOrg) {
+          targetOrgId = envOrg;
+          identifiedUserType = 'new';
+
+          if (envSite) {
+            targetSiteId = envSite;
+          } else {
+            const { data: oneSite } = await supabase
+              .from('sites')
+              .select('id')
+              .eq('org_id', envOrg)
+              .limit(1)
+              .maybeSingle();
+            if (oneSite) targetSiteId = oneSite.id;
+          }
         }
 
-        targetOrgId = latestOrg.id;
-        identifiedUserType = 'new';
-      }
+        // Optional site-code routing for non-sandbox
+        if (!targetOrgId) {
+          const siteCodeHint = extractSiteCodeFromBody(body);
+          if (siteCodeHint) {
+            const { data: siteRow } = await supabase
+              .from('sites')
+              .select('id, org_id, code')
+              .ilike('code', siteCodeHint)
+              .maybeSingle();
 
-      // Queue unknown contact for the org we resolved (site code / env / latest)
-      const { data: existingReq } = await supabase
-        .from('requesters')
-        .select('id')
-        .eq('phone', rawDigits)
-        .eq('org_id', targetOrgId)
-        .maybeSingle();
+            if (siteRow?.org_id) {
+              targetOrgId = siteRow.org_id;
+              targetSiteId = siteRow.id;
+              identifiedUserType = 'new';
+            }
+          }
+        }
 
-      if (!existingReq && identifiedUserType === 'new') {
-        await supabase.from('requesters').insert([{
-          phone: rawDigits,
-          org_id: targetOrgId!,
-          status: 'pending',
-          created_at: new Date().toISOString()
-        }]);
+        // Last resort: newest org
+        if (!targetOrgId) {
+          const { data: latestOrg } = await supabase
+            .from('organizations')
+            .select('id, name')
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (!latestOrg) {
+            return new Response('Configuration Error: No organizations exist.', { status: 500 });
+          }
+
+          targetOrgId = latestOrg.id;
+          identifiedUserType = 'new';
+        }
+
+        // Queue unknown contact for the resolved org
+        const { data: existingReq } = await supabase
+          .from('requesters')
+          .select('id')
+          .eq('phone', rawDigits)
+          .eq('org_id', targetOrgId)
+          .maybeSingle();
+
+        if (!existingReq) {
+          await supabase.from('requesters').insert([{
+            phone: rawDigits,
+            org_id: targetOrgId!,
+            status: 'pending',
+            created_at: new Date().toISOString()
+          }]);
+        }
       }
     }
 

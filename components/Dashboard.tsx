@@ -20,16 +20,12 @@ const Dashboard: React.FC<DashboardProps> = ({ srs, onNewRequest, assets, organi
 
   const avgResolve = useMemo(() => formatMeanResolution(meanResolutionHours(srs)), [srs]);
 
-  /** Twilio sandbox requires their exact keyword phrase (e.g. `join bad-color`).
-   * We append the first site's code as a routing hint so the webhook can assign the right org/site.
-   */
+  /** Twilio sandbox requires their exact keyword phrase (e.g. `join bad-color`) */
   const sandboxJoin =
     (import.meta.env.VITE_TWILIO_SANDBOX_JOIN as string | undefined)?.trim() || 'join bad-color';
-  const primarySiteCode = sites[0]?.code;
-  const sandboxJoinWithSiteHint = primarySiteCode ? `${sandboxJoin} ${primarySiteCode}` : sandboxJoin;
   const waDigits =
     (import.meta.env.VITE_TWILIO_WHATSAPP_NUMBER as string | undefined)?.replace(/\D/g, '') || '14155238886';
-  const whatsappUrl = `https://wa.me/${waDigits}?text=${encodeURIComponent(sandboxJoinWithSiteHint)}`;
+  const whatsappUrl = `https://wa.me/${waDigits}?text=${encodeURIComponent(sandboxJoin)}`;
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(whatsappUrl)}&ecc=M&margin=8&color=0c1222`;
 
   const handleShare = async () => {
@@ -92,7 +88,7 @@ const Dashboard: React.FC<DashboardProps> = ({ srs, onNewRequest, assets, organi
               <h3 className="text-xl md:text-2xl font-bold mt-2 leading-snug">WhatsApp maintenance line</h3>
               <p className="text-slate-400 text-sm mt-2 max-w-md leading-relaxed">
                 QR/link pre-fills WhatsApp for Twilio sandbox with:{' '}
-                <span className="text-white font-mono font-semibold">{sandboxJoinWithSiteHint}</span>
+                <span className="text-white font-mono font-semibold">{sandboxJoin}</span>
               </p>
             </div>
             <button
