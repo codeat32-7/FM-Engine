@@ -9,8 +9,10 @@ import Settings from './components/Settings';
 import Auth from './components/Auth';
 import TenantPortal from './components/TenantPortal';
 import SRDetail from './components/SRDetail';
-import { Site, Asset, ServiceRequest, SRStatus, Status, SRSource, TabConfig, UserProfile, Tenant, Organization, Requester } from './types';
+import { Site, Asset, ServiceRequest, SRStatus, Status, SRSource, TabConfig, UserProfile, Tenant, Organization, Requester, Block } from './types';
 import { supabase, checkSchemaReady } from './lib/supabase';
+import { generateServiceRequestId } from './lib/srId';
+import { digitsOnly, phonesMatch, formatPhoneDisplay } from './lib/phone';
 import { 
   X, MapPin, Plus, Loader2, ArrowRight, CheckCircle, AlertCircle, RefreshCw, Phone, UserCheck, Rocket, Sparkles, Hash, Trash2
 } from 'lucide-react';
@@ -78,40 +80,52 @@ const Onboarding: React.FC<{ user: UserProfile, onComplete: (user: UserProfile) 
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6 text-slate-900">
-      <div className="max-w-md w-full bg-white rounded-[48px] p-12 shadow-2xl border border-slate-100 space-y-8 animate-in zoom-in duration-500 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 rounded-full -mr-16 -mt-16" />
+    <div className="min-h-screen bg-fm-navy flex items-center justify-center p-6">
+      <div className="max-w-md w-full bg-fm-surface rounded-2xl p-10 shadow-fm border border-fm-border space-y-8 fm-animate-in relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-br from-fm-accent/5 to-transparent pointer-events-none" />
         <div className="flex justify-between items-center relative z-10">
           <div className="flex gap-2">
             {[1, 2, 3].map(i => (
-              <div key={i} className={`h-1.5 w-8 rounded-full transition-all ${step >= i ? 'bg-blue-600' : 'bg-slate-100'}`} />
+              <div key={i} className={`h-1.5 w-8 rounded-full transition-all ${step >= i ? 'bg-fm-accent' : 'bg-fm-border'}`} />
             ))}
           </div>
-          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Step {step} of 3</span>
+          <span className="text-[10px] font-semibold text-fm-muted uppercase tracking-widest">Step {step} of 3</span>
         </div>
         {step === 1 && (
-          <div className="space-y-6 animate-in slide-in-from-right duration-300">
-            <h2 className="text-3xl font-black text-slate-900 leading-tight">Your Identity</h2>
-            <input autoFocus className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 focus:bg-white rounded-3xl p-6 outline-none font-bold text-lg" placeholder="Admin Full Name" value={adminName} onChange={e => setAdminName(e.target.value)} />
-            <button disabled={!adminName} onClick={() => setStep(2)} className="w-full bg-slate-900 text-white py-6 rounded-3xl font-black flex items-center justify-center gap-3 transition-all hover:bg-slate-800">Continue <ArrowRight /></button>
+          <div className="space-y-6 relative z-10">
+            <div>
+              <p className="text-xs font-semibold text-fm-accent uppercase tracking-wider mb-1">Facility setup</p>
+              <h2 className="text-2xl font-bold text-fm-ink leading-tight">Your name</h2>
+              <p className="text-sm text-fm-muted mt-1">Shown on work orders and resident communications.</p>
+            </div>
+            <input autoFocus className="w-full bg-fm-canvas border border-fm-border focus:border-fm-accent focus:ring-2 focus:ring-fm-accent/20 rounded-xl p-4 outline-none font-medium text-fm-ink" placeholder="Full name" value={adminName} onChange={e => setAdminName(e.target.value)} />
+            <button disabled={!adminName} onClick={() => setStep(2)} className="w-full bg-fm-navy text-white py-4 rounded-xl font-semibold flex items-center justify-center gap-2 transition-all hover:bg-slate-800 disabled:opacity-40">Continue <ArrowRight size={18} /></button>
           </div>
         )}
         {step === 2 && (
-          <div className="space-y-6 animate-in slide-in-from-right duration-300">
-            <h2 className="text-3xl font-black text-slate-900">Organization</h2>
-            <input autoFocus className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 focus:bg-white rounded-3xl p-6 outline-none font-bold text-lg" placeholder="e.g. Jungle" value={orgName} onChange={e => setOrgName(e.target.value)} />
-            <button disabled={!orgName} onClick={() => setStep(3)} className="w-full bg-slate-900 text-white py-6 rounded-3xl font-black flex items-center justify-center gap-3 transition-all hover:bg-slate-800">Continue <ArrowRight /></button>
+          <div className="space-y-6 relative z-10">
+            <div>
+              <p className="text-xs font-semibold text-fm-accent uppercase tracking-wider mb-1">Organization</p>
+              <h2 className="text-2xl font-bold text-fm-ink">Company or portfolio</h2>
+              <p className="text-sm text-fm-muted mt-1">One org can hold many sites and assets.</p>
+            </div>
+            <input autoFocus className="w-full bg-fm-canvas border border-fm-border focus:border-fm-accent focus:ring-2 focus:ring-fm-accent/20 rounded-xl p-4 outline-none font-medium text-fm-ink" placeholder="e.g. Acme Facilities Ltd" value={orgName} onChange={e => setOrgName(e.target.value)} />
+            <button disabled={!orgName} onClick={() => setStep(3)} className="w-full bg-fm-navy text-white py-4 rounded-xl font-semibold flex items-center justify-center gap-2 hover:bg-slate-800 disabled:opacity-40">Continue <ArrowRight size={18} /></button>
           </div>
         )}
         {step === 3 && (
-          <div className="space-y-6 animate-in slide-in-from-right duration-300">
-            <h2 className="text-3xl font-black text-slate-900">Primary Site</h2>
-            <div className="space-y-4">
-              <input autoFocus className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 focus:bg-white rounded-3xl p-5 outline-none font-bold text-slate-800" placeholder="Facility Name" value={siteName} onChange={e => setSiteName(e.target.value)} />
-              <input className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 focus:bg-white rounded-3xl p-5 outline-none font-bold text-slate-800" placeholder="Location" value={siteLocation} onChange={e => setSiteLocation(e.target.value)} />
+          <div className="space-y-6 relative z-10">
+            <div>
+              <p className="text-xs font-semibold text-fm-accent uppercase tracking-wider mb-1">Primary site</p>
+              <h2 className="text-2xl font-bold text-fm-ink">First facility</h2>
+              <p className="text-sm text-fm-muted mt-1">You can add more sites after onboarding.</p>
             </div>
-            <button disabled={loading || !siteName || !siteLocation} onClick={handleSetup} className="w-full bg-blue-600 text-white py-6 rounded-3xl font-black flex items-center justify-center gap-3 transition-all hover:bg-blue-700">
-              {loading ? <Loader2 className="animate-spin" /> : <>Complete Setup <Rocket /></>}
+            <div className="space-y-3">
+              <input autoFocus className="w-full bg-fm-canvas border border-fm-border focus:border-fm-accent rounded-xl p-4 outline-none font-medium text-fm-ink" placeholder="Site name" value={siteName} onChange={e => setSiteName(e.target.value)} />
+              <input className="w-full bg-fm-canvas border border-fm-border focus:border-fm-accent rounded-xl p-4 outline-none font-medium text-fm-ink" placeholder="Address or city" value={siteLocation} onChange={e => setSiteLocation(e.target.value)} />
+            </div>
+            <button disabled={loading || !siteName || !siteLocation} onClick={handleSetup} className="w-full bg-fm-accent text-white py-4 rounded-xl font-semibold flex items-center justify-center gap-2 hover:opacity-90 disabled:opacity-40">
+              {loading ? <Loader2 className="animate-spin" /> : <>Complete setup <Rocket size={18} /></>}
             </button>
           </div>
         )}
@@ -129,6 +143,7 @@ const App: React.FC = () => {
   
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [sites, setSites] = useState<Site[]>([]);
+  const [blocks, setBlocks] = useState<Block[]>([]);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [requesters, setRequesters] = useState<Requester[]>([]);
@@ -154,6 +169,12 @@ const App: React.FC = () => {
   const [showAddSite, setShowAddSite] = useState(false);
   const [showAddSR, setShowAddSR] = useState(false);
   const [showApproveModal, setShowApproveModal] = useState<Requester | null>(null);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('fm_tabs', JSON.stringify(tabConfigs));
+    } catch { /* ignore */ }
+  }, [tabConfigs]);
 
   useEffect(() => {
     const init = async () => {
@@ -183,9 +204,17 @@ const App: React.FC = () => {
         supabase.from('service_requests').select('*').eq('org_id', currentUser.org_id),
         supabase.from('requesters').select('*').eq('org_id', currentUser.org_id).eq('status', 'pending')
       ]);
-      
-      setOrganization(orgData.data);
-      setSites(siteData.data || []);
+
+      const siteRows = siteData.data || [];
+      const siteIds = siteRows.map(s => s.id);
+      let blockRows: Block[] = [];
+      if (siteIds.length > 0) {
+        const { data: b, error: blockErr } = await supabase.from('blocks').select('*').in('site_id', siteIds);
+        if (!blockErr && b) blockRows = b as Block[];
+      }
+
+      setSites(siteRows);
+      setBlocks(blockRows);
       setAssets(assetData.data || []);
       setTenants(tenantData.data || []);
       setRequesters(reqData.data || []);
@@ -208,7 +237,7 @@ const App: React.FC = () => {
         } else if (payload.eventType === 'UPDATE') {
           const updated = payload.new as ServiceRequest;
           setSrs(prev => prev.map(sr => sr.id === updated.id ? updated : sr));
-          if (selectedSr?.id === updated.id) setSelectedSr(updated);
+          setSelectedSr(prev => (prev?.id === updated.id ? updated : prev));
         }
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'requesters', filter: `org_id=eq.${currentUser.org_id}` }, (payload) => {
@@ -260,7 +289,7 @@ const App: React.FC = () => {
 
     if (table === 'tenants') {
       const tenant = tenants.find(t => t.id === id);
-      const hasSRs = srs.some(sr => sr.requester_phone === tenant?.phone);
+      const hasSRs = srs.some(sr => phonesMatch(sr.requester_phone, tenant?.phone));
       if (hasSRs) {
         if (!confirm("This tenant has active service requests. Deleting the tenant will disconnect them from their history. Proceed?")) return;
       }
@@ -282,8 +311,9 @@ const App: React.FC = () => {
       const name = formData.get('name') as string;
       const siteId = formData.get('site_id') as string;
 
+      const cleanReqPhone = digitsOnly(requester.phone);
       const { data: profile, error: profErr } = await supabase.from('profiles').insert([{
-        phone: requester.phone,
+        phone: cleanReqPhone,
         org_id: currentUser?.org_id,
         full_name: name,
         role: 'tenant'
@@ -294,7 +324,7 @@ const App: React.FC = () => {
         org_id: currentUser?.org_id,
         site_id: siteId,
         name: name,
-        phone: requester.phone,
+        phone: cleanReqPhone,
         status: Status.ACTIVE,
         profile_id: profile.id
       }]).select().single();
@@ -311,8 +341,9 @@ const App: React.FC = () => {
 
   if (dbStatus === 'connecting') {
     return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
-        <Loader2 className="animate-spin text-blue-500" size={48} />
+      <div className="min-h-screen bg-fm-navy flex flex-col items-center justify-center gap-4">
+        <Loader2 className="animate-spin text-fm-accent" size={40} />
+        <p className="text-sm text-slate-400 font-medium">Connecting to operations database…</p>
       </div>
     );
   }
@@ -436,38 +467,37 @@ ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS site_id UUID REFERENCES si
 ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS asset_id UUID REFERENCES assets(id) ON DELETE SET NULL;`;
 
     return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6 text-white">
-        <div className="max-w-3xl w-full bg-slate-800 rounded-[48px] p-12 border border-slate-700 shadow-2xl space-y-8 animate-in zoom-in duration-500">
-          <div className="flex items-center gap-6 text-amber-400">
-            <AlertCircle size={64} />
+      <div className="min-h-screen bg-fm-navy flex items-center justify-center p-6 text-white">
+        <div className="max-w-3xl w-full bg-slate-800/90 backdrop-blur rounded-2xl p-10 border border-slate-600/50 shadow-fm space-y-8 fm-animate-in">
+          <div className="flex items-start gap-5">
+            <div className="p-3 rounded-xl bg-fm-accent/20 text-fm-accent shrink-0">
+              <AlertCircle size={36} />
+            </div>
             <div>
-              <h1 className="text-4xl font-black">Database Setup Required</h1>
-              <p className="text-slate-400 text-lg mt-2 font-medium">The required tables are missing from your Supabase project.</p>
+              <h1 className="text-2xl font-bold tracking-tight">Database setup required</h1>
+              <p className="text-slate-400 text-sm mt-2 leading-relaxed">Run the bootstrap script in the Supabase SQL Editor, then refresh. Afterward, tighten RLS policies for production.</p>
             </div>
           </div>
-          
-          <div className="space-y-4">
-            <p className="text-slate-300 font-medium">Please run the following script in your <strong className="text-white">Supabase SQL Editor</strong> to initialize the database and enable Row Level Security (RLS):</p>
-            <div className="bg-black/40 rounded-3xl p-8 font-mono text-xs text-emerald-400 border border-white/5 relative group">
-              <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button 
-                  onClick={() => { navigator.clipboard.writeText(sqlScript); alert("SQL Copied!"); }}
-                  className="bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2"
+          <div className="space-y-3">
+            <div className="bg-black/35 rounded-xl p-6 font-mono text-[11px] text-emerald-400/95 border border-white/10 relative group max-h-[min(420px,50vh)] overflow-auto">
+              <div className="sticky top-0 float-right mb-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button
+                  type="button"
+                  onClick={() => { navigator.clipboard.writeText(sqlScript); alert('SQL copied'); }}
+                  className="bg-slate-700 hover:bg-slate-600 text-white text-xs font-semibold px-3 py-2 rounded-lg"
                 >
-                  Copy SQL
+                  Copy
                 </button>
               </div>
-              <pre className="overflow-x-auto max-h-[400px] overflow-y-auto custom-scrollbar">
-                {sqlScript}
-              </pre>
+              <pre className="whitespace-pre-wrap pr-2">{sqlScript}</pre>
             </div>
           </div>
-
-          <button 
+          <button
+            type="button"
             onClick={() => window.location.reload()}
-            className="w-full bg-blue-600 hover:bg-blue-500 text-white py-6 rounded-3xl font-black text-xl transition-all shadow-xl shadow-blue-900/20 flex items-center justify-center gap-3"
+            className="w-full bg-fm-accent hover:opacity-90 text-white py-4 rounded-xl font-semibold flex items-center justify-center gap-2 transition-all"
           >
-            <RefreshCw size={24} /> I've run the SQL, Refresh App
+            <RefreshCw size={20} /> Refresh after running SQL
           </button>
         </div>
       </div>
@@ -509,72 +539,84 @@ ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS asset_id UUID REFERENCES a
       )}
       
       {activeTab === 'requesters' && (
-        <div className="space-y-6 animate-in fade-in duration-500">
-          <div><h2 className="text-3xl font-black text-slate-900">Approvals</h2><p className="text-slate-500 font-medium text-sm">Verify strangers requesting facility access.</p></div>
-          <div className="grid md:grid-cols-2 gap-6">
+        <div className="space-y-8 fm-animate-in">
+          <div>
+            <p className="text-xs font-semibold text-fm-accent uppercase tracking-wider">Access control</p>
+            <h2 className="text-2xl font-bold text-fm-ink mt-1">Pending identities</h2>
+            <p className="text-fm-muted text-sm mt-1 max-w-xl">Residents who messaged your WhatsApp line before being linked to a unit. Verify and assign a site to activate their portal.</p>
+          </div>
+          <div className="grid md:grid-cols-2 gap-5">
             {requesters.map(req => (
-              <div key={req.id} className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm flex flex-col justify-between hover:border-blue-200 transition-all relative group">
-                <button 
+              <div key={req.id} className="bg-fm-surface p-6 rounded-xl border border-fm-border shadow-fm flex flex-col gap-5 hover:border-fm-accent/30 transition-colors relative group">
+                <button
+                  type="button"
                   onClick={() => handleDeleteItem('requesters', req.id, setRequesters)}
-                  className="absolute top-6 right-6 p-2 text-slate-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+                  className="absolute top-4 right-4 p-2 text-fm-muted hover:text-red-600 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                  aria-label="Dismiss request"
                 >
                   <Trash2 size={18} />
                 </button>
-                <div className="flex items-center gap-4 mb-6">
-                  <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center"><Phone size={24} /></div>
-                  <div><p className="text-lg font-black text-slate-900">+{req.phone}</p><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">New Contact</p></div>
+                <div className="flex items-center gap-4">
+                  <div className="w-11 h-11 bg-fm-accentsoft text-fm-accent rounded-xl flex items-center justify-center"><Phone size={22} /></div>
+                  <div>
+                    <p className="font-mono text-sm font-semibold text-fm-ink">{formatPhoneDisplay(req.phone)}</p>
+                    <p className="text-[10px] font-semibold text-fm-muted uppercase tracking-wider">Unverified contact</p>
+                  </div>
                 </div>
-                <button onClick={() => setShowApproveModal(req)} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-slate-800 transition-all shadow-lg">
-                  <UserCheck size={20} /> Identity & Activate
+                <button type="button" onClick={() => setShowApproveModal(req)} className="w-full bg-fm-navy text-white py-3.5 rounded-xl font-semibold flex items-center justify-center gap-2 hover:bg-slate-800 transition-colors">
+                  <UserCheck size={18} /> Verify &amp; activate
                 </button>
               </div>
             ))}
             {requesters.length === 0 && (
-              <div className="col-span-full py-24 text-center bg-white rounded-[40px] border-2 border-dashed border-slate-100">
-                <Sparkles className="text-slate-200 mx-auto mb-4" size={48} />
-                <p className="text-slate-400 font-black text-xl">Approval queue clear</p>
-                <p className="text-slate-400 text-sm mt-2">New WhatsApp users will appear here if they are already in your system.</p>
+              <div className="col-span-full py-20 text-center bg-fm-surface rounded-xl border border-dashed border-fm-border">
+                <Sparkles className="text-fm-border mx-auto mb-3" size={40} />
+                <p className="text-fm-ink font-semibold">Queue is clear</p>
+                <p className="text-fm-muted text-sm mt-1 max-w-md mx-auto">New WhatsApp senders who are not yet tenants will appear here for your review.</p>
               </div>
             )}
           </div>
         </div>
       )}
 
-      {activeTab === 'assets' && <AssetList assets={assets} sites={sites} onAdd={() => {}} onDelete={(id) => handleDeleteItem('assets', id, setAssets)} />}
+      {activeTab === 'assets' && <AssetList assets={assets} sites={sites} blocks={blocks} onAdd={() => {}} onDelete={(id) => handleDeleteItem('assets', id, setAssets)} />}
       {activeTab === 'settings' && <Settings configs={tabConfigs} setConfigs={setTabConfigs} onLogout={() => { localStorage.removeItem('fm_engine_user'); window.location.reload(); }} />}
       {activeTab === 'sites' && (
-        <div className="space-y-8 pb-20">
-          <div className="flex justify-between items-end">
-            <div><h2 className="text-3xl font-black text-slate-900">Sites</h2><p className="text-slate-500 font-medium">Physical Locations</p></div>
-            <button onClick={() => setShowAddSite(true)} className="bg-slate-900 text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 shadow-lg active:scale-95 transition-all"><Plus size={20} /> New Site</button>
+        <div className="space-y-8 pb-20 fm-animate-in">
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold text-fm-accent uppercase tracking-wider">Portfolio</p>
+              <h2 className="text-2xl font-bold text-fm-ink mt-1">Sites &amp; facilities</h2>
+              <p className="text-fm-muted text-sm mt-1">Each site has a registration code for WhatsApp sandbox onboarding.</p>
+            </div>
+            <button type="button" onClick={() => setShowAddSite(true)} className="bg-fm-navy text-white px-5 py-3 rounded-xl font-semibold flex items-center justify-center gap-2 shadow-fm hover:bg-slate-800 transition-colors shrink-0"><Plus size={20} /> Add site</button>
           </div>
-          <div className="grid md:grid-cols-2 gap-8">
+          <div className="grid md:grid-cols-2 gap-5">
             {sites.map(site => (
-              <div key={site.id} className="bg-white p-10 rounded-[48px] border border-slate-100 shadow-sm relative overflow-hidden group">
-                <div className="absolute top-0 right-0 w-32 h-32 bg-blue-50 rounded-full -mr-16 -mt-16 group-hover:bg-blue-100 transition-colors" />
-                <button 
+              <div key={site.id} className="bg-fm-surface p-8 rounded-xl border border-fm-border shadow-fm relative overflow-hidden group">
+                <button
+                  type="button"
                   onClick={() => handleDeleteItem('sites', site.id, setSites)}
-                  className="absolute top-8 right-8 p-2 text-slate-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100 z-20"
+                  className="absolute top-5 right-5 p-2 text-fm-muted hover:text-red-600 rounded-lg opacity-0 group-hover:opacity-100 z-20 transition-opacity"
+                  aria-label="Delete site"
                 >
-                  <Trash2 size={20} />
+                  <Trash2 size={18} />
                 </button>
-                <div className="relative z-10">
-                  <div className="flex justify-between items-start mb-8">
-                    <div className="p-5 bg-blue-50 text-blue-600 rounded-2xl"><MapPin size={32} /></div>
-                    <div className="flex flex-col items-end">
-                      <span className="text-[10px] font-black uppercase text-slate-400 tracking-[0.2em] mb-1">Registration Code</span>
-                      <div className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl font-mono text-sm font-black shadow-lg shadow-slate-200">
-                        <Hash size={14} className="text-blue-400" /> {site.code}
-                      </div>
+                <div className="flex justify-between items-start gap-4 mb-6">
+                  <div className="p-4 bg-fm-canvas text-fm-accent rounded-xl border border-fm-border"><MapPin size={28} /></div>
+                  <div className="text-right min-w-0">
+                    <span className="text-[10px] font-semibold text-fm-muted uppercase tracking-wider block mb-1">WhatsApp join code</span>
+                    <div className="inline-flex items-center gap-2 px-3 py-2 bg-fm-navy text-white rounded-lg font-mono text-sm font-semibold">
+                      <Hash size={14} className="text-fm-accent shrink-0" />
+                      <span className="truncate">{site.code}</span>
                     </div>
                   </div>
-                  <h3 className="text-3xl font-black text-slate-900 mb-2">{site.name}</h3>
-                  <p className="text-slate-500 font-medium">{site.location}</p>
-                  
-                  <div className="mt-8 pt-8 border-t border-slate-50 flex items-center gap-2 text-xs font-black text-slate-400 uppercase tracking-widest">
-                    <CheckCircle size={14} className="text-emerald-500" />
-                    Verified Facility
-                  </div>
+                </div>
+                <h3 className="text-xl font-bold text-fm-ink mb-1">{site.name}</h3>
+                <p className="text-fm-muted text-sm">{site.location}</p>
+                <div className="mt-6 pt-5 border-t border-fm-border flex items-center gap-2 text-xs font-semibold text-fm-success uppercase tracking-wide">
+                  <CheckCircle size={14} />
+                  Active site
                 </div>
               </div>
             ))}
@@ -583,41 +625,70 @@ ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS asset_id UUID REFERENCES a
       )}
 
       {showAddSR && (
-        <div className="fixed inset-0 z-[1000] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4">
-          <form onSubmit={async (e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); await handleAddItem('service_requests', { id: `SR-${Math.floor(10000 + Math.random() * 90000)}`, title: fd.get('title'), description: fd.get('description'), site_id: fd.get('site_id') || null, status: SRStatus.NEW, source: SRSource.WEB, created_at: new Date().toISOString() }, setSrs, () => setShowAddSR(false)); }} className="bg-white w-full max-w-lg rounded-[40px] p-10 shadow-2xl space-y-8 animate-in zoom-in duration-300">
-            <div className="flex justify-between items-center"><h3 className="text-3xl font-black text-slate-900">New Request</h3><button type="button" onClick={() => setShowAddSR(false)} className="p-2 bg-slate-100 rounded-full"><X size={24} /></button></div>
-            <div className="space-y-4"><input required name="title" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold border-2 border-transparent focus:border-blue-500 text-slate-900" placeholder="Problem Summary" /><textarea name="description" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-medium h-32 border-2 border-transparent focus:border-blue-500 text-slate-900" placeholder="Full Details" /><select name="site_id" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold text-slate-900"><option value="">Select Facility</option>{sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
-            <button type="submit" disabled={isLoading} className="w-full bg-blue-600 text-white py-6 rounded-3xl font-black text-xl shadow-xl shadow-blue-100">{isLoading ? <Loader2 className="animate-spin mx-auto" /> : 'Log Ticket'}</button>
+        <div className="fixed inset-0 z-[1000] bg-fm-navy/55 backdrop-blur-sm flex items-center justify-center p-4">
+          <form onSubmit={async (e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); await handleAddItem('service_requests', { id: generateServiceRequestId(), title: fd.get('title'), description: fd.get('description'), site_id: fd.get('site_id') || null, status: SRStatus.NEW, source: SRSource.WEB, created_at: new Date().toISOString() }, setSrs, () => setShowAddSR(false)); }} className="bg-fm-surface w-full max-w-lg rounded-2xl p-8 shadow-fm border border-fm-border space-y-6 fm-animate-in">
+            <div className="flex justify-between items-start gap-4">
+              <div>
+                <p className="text-xs font-semibold text-fm-accent uppercase tracking-wider">Work order</p>
+                <h3 className="text-xl font-bold text-fm-ink mt-0.5">Log internal request</h3>
+              </div>
+              <button type="button" onClick={() => setShowAddSR(false)} className="p-2 rounded-lg hover:bg-fm-canvas text-fm-muted" aria-label="Close"><X size={22} /></button>
+            </div>
+            <div className="space-y-3">
+              <input required name="title" className="w-full bg-fm-canvas border border-fm-border rounded-xl p-4 outline-none font-medium focus:border-fm-accent focus:ring-2 focus:ring-fm-accent/15 text-fm-ink" placeholder="Short summary (e.g. Lobby AC weak)" />
+              <textarea name="description" className="w-full bg-fm-canvas border border-fm-border rounded-xl p-4 outline-none text-sm min-h-[120px] focus:border-fm-accent focus:ring-2 focus:ring-fm-accent/15 text-fm-ink" placeholder="Details, location in building, priority notes…" />
+              <select name="site_id" className="w-full bg-fm-canvas border border-fm-border rounded-xl p-4 outline-none font-medium text-fm-ink focus:border-fm-accent">
+                <option value="">Select site (optional)</option>
+                {sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+            <button type="submit" disabled={isLoading} className="w-full bg-fm-accent text-white py-4 rounded-xl font-semibold hover:opacity-90 disabled:opacity-50">{isLoading ? <Loader2 className="animate-spin mx-auto" /> : 'Create work order'}</button>
           </form>
         </div>
       )}
 
       {showAddSite && (
-        <div className="fixed inset-0 z-[1000] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4">
-           <form onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); handleAddItem('sites', { name: fd.get('name'), location: fd.get('location'), code: `SITE-${Math.floor(1000+Math.random()*9000)}`, status: Status.ACTIVE }, setSites, () => setShowAddSite(false)); }} className="bg-white w-full max-w-md rounded-[48px] p-12 shadow-2xl space-y-8 animate-in zoom-in duration-300">
-              <div className="flex justify-between items-center"><h3 className="text-3xl font-black text-slate-900">New Site</h3><button type="button" onClick={() => setShowAddSite(false)} className="p-2 bg-slate-100 rounded-full"><X size={24} /></button></div>
-              <div className="space-y-4"><input required name="name" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold text-slate-900 border-2 border-transparent focus:border-blue-500" placeholder="Facility Name" /><input required name="location" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold text-slate-900 border-2 border-transparent focus:border-blue-500" placeholder="Location" /></div>
-              <button type="submit" disabled={isLoading} className="w-full bg-slate-900 text-white py-6 rounded-3xl font-black">Register Site</button>
-           </form>
+        <div className="fixed inset-0 z-[1000] bg-fm-navy/55 backdrop-blur-sm flex items-center justify-center p-4">
+          <form onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); handleAddItem('sites', { name: fd.get('name'), location: fd.get('location'), code: `SITE-${Math.floor(1000 + Math.random() * 9000)}`, status: Status.ACTIVE }, setSites, () => setShowAddSite(false)); }} className="bg-fm-surface w-full max-w-md rounded-2xl p-8 shadow-fm border border-fm-border space-y-6 fm-animate-in">
+            <div className="flex justify-between items-start">
+              <div>
+                <p className="text-xs font-semibold text-fm-accent uppercase tracking-wider">Portfolio</p>
+                <h3 className="text-xl font-bold text-fm-ink mt-0.5">Add site</h3>
+              </div>
+              <button type="button" onClick={() => setShowAddSite(false)} className="p-2 rounded-lg hover:bg-fm-canvas text-fm-muted"><X size={22} /></button>
+            </div>
+            <div className="space-y-3">
+              <input required name="name" className="w-full bg-fm-canvas border border-fm-border rounded-xl p-4 outline-none font-medium focus:border-fm-accent text-fm-ink" placeholder="Site name" />
+              <input required name="location" className="w-full bg-fm-canvas border border-fm-border rounded-xl p-4 outline-none font-medium focus:border-fm-accent text-fm-ink" placeholder="Address / region" />
+            </div>
+            <button type="submit" disabled={isLoading} className="w-full bg-fm-navy text-white py-4 rounded-xl font-semibold hover:bg-slate-800 disabled:opacity-50">Save site</button>
+          </form>
         </div>
       )}
 
       {showApproveModal && (
-        <div className="fixed inset-0 z-[1000] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4">
-          <form onSubmit={async (e) => { e.preventDefault(); await handleApproveTenant(showApproveModal, new FormData(e.currentTarget)); }} className="bg-white w-full max-w-lg rounded-[40px] p-10 shadow-2xl space-y-8 animate-in zoom-in duration-300">
-            <div className="flex justify-between items-center"><h3 className="text-3xl font-black text-slate-900">Activate Resident</h3><button type="button" onClick={() => setShowApproveModal(null)} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200"><X size={24} /></button></div>
-            <div className="space-y-4">
-              <div className="p-6 bg-blue-50 text-blue-700 rounded-2xl font-black flex items-center gap-4 text-lg">
-                <Phone size={24} /> +{showApproveModal.phone}
+        <div className="fixed inset-0 z-[1000] bg-fm-navy/55 backdrop-blur-sm flex items-center justify-center p-4">
+          <form onSubmit={async (e) => { e.preventDefault(); await handleApproveTenant(showApproveModal, new FormData(e.currentTarget)); }} className="bg-fm-surface w-full max-w-lg rounded-2xl p-8 shadow-fm border border-fm-border space-y-6 fm-animate-in">
+            <div className="flex justify-between items-start">
+              <div>
+                <p className="text-xs font-semibold text-fm-accent uppercase tracking-wider">Resident</p>
+                <h3 className="text-xl font-bold text-fm-ink mt-0.5">Activate access</h3>
               </div>
-              <input required name="name" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold text-slate-900 border-2 border-transparent focus:border-blue-500" placeholder="Full Name" />
-              <select required name="site_id" className="w-full bg-slate-50 rounded-2xl p-5 outline-none font-bold text-slate-900">
-                <option value="">Assign to Facility...</option>
+              <button type="button" onClick={() => setShowApproveModal(null)} className="p-2 rounded-lg hover:bg-fm-canvas text-fm-muted"><X size={22} /></button>
+            </div>
+            <div className="p-4 bg-fm-canvas border border-fm-border rounded-xl flex items-center gap-3 text-fm-ink">
+              <Phone size={22} className="text-fm-accent shrink-0" />
+              <span className="font-mono font-semibold">{formatPhoneDisplay(showApproveModal.phone)}</span>
+            </div>
+            <div className="space-y-3">
+              <input required name="name" className="w-full bg-fm-canvas border border-fm-border rounded-xl p-4 outline-none font-medium focus:border-fm-accent text-fm-ink" placeholder="Full name" />
+              <select required name="site_id" className="w-full bg-fm-canvas border border-fm-border rounded-xl p-4 outline-none font-medium text-fm-ink focus:border-fm-accent">
+                <option value="">Assign to site…</option>
                 {sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </div>
-            <button type="submit" disabled={isLoading} className="w-full bg-emerald-600 text-white py-6 rounded-3xl font-black text-xl shadow-xl shadow-emerald-100 transition-all">
-               {isLoading ? <Loader2 className="animate-spin" /> : 'Confirm Approval'}
+            <button type="submit" disabled={isLoading} className="w-full bg-fm-success text-white py-4 rounded-xl font-semibold hover:opacity-90 disabled:opacity-50">
+              {isLoading ? <Loader2 className="animate-spin mx-auto" /> : 'Confirm activation'}
             </button>
           </form>
         </div>

@@ -210,7 +210,7 @@ export default async function handler(req: Request) {
         site_id: targetSiteId,
         title: finalTitle,
         description: cleanBody,
-        requester_phone: from,
+        requester_phone: rawDigits,
         status: 'New',
         source: 'WhatsApp',
         created_at: new Date().toISOString()

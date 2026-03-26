@@ -1,7 +1,8 @@
 
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import { Tenant, Site, Status } from '../types';
 import { Plus, Search, User, Phone, MapPin, Trash2 } from 'lucide-react';
+import { formatPhoneDisplay } from '../lib/phone';
 
 interface TenantListProps {
   tenants: Tenant[];
@@ -11,64 +12,90 @@ interface TenantListProps {
 }
 
 const TenantList: React.FC<TenantListProps> = ({ tenants, sites, onAdd, onDelete }) => {
+  const [q, setQ] = useState('');
+  const filtered = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    if (!s) return tenants;
+    return tenants.filter(
+      t =>
+        t.name.toLowerCase().includes(s) ||
+        (t.phone || '').replace(/\D/g, '').includes(s.replace(/\D/g, '')) ||
+        formatPhoneDisplay(t.phone).toLowerCase().includes(s)
+    );
+  }, [tenants, q]);
+
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
-      <div className="flex justify-between items-end">
+    <div className="space-y-6 fm-animate-in">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
         <div>
-          <h2 className="text-3xl font-black text-slate-900">Tenants</h2>
-          <p className="text-slate-500 font-medium text-sm">Manage occupants and residents</p>
+          <p className="text-xs font-semibold text-fm-accent uppercase tracking-wider">Occupants</p>
+          <h2 className="text-2xl font-bold text-fm-ink mt-1">Tenants</h2>
+          <p className="text-fm-muted text-sm mt-1">Residents linked to sites and work order history.</p>
         </div>
-        <button onClick={onAdd} className="bg-slate-900 text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 shadow-lg shadow-slate-200 active:scale-95 transition-all">
-          <Plus size={20} /> Add Tenant
+        <button
+          type="button"
+          onClick={onAdd}
+          className="bg-fm-navy text-white px-5 py-3 rounded-xl font-semibold text-sm flex items-center gap-2 shadow-fm hover:bg-slate-800 shrink-0"
+        >
+          <Plus size={18} /> Add tenant
         </button>
       </div>
 
-      <div className="relative mb-8">
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-        <input 
-          type="text" 
-          placeholder="Search tenants by name or phone..." 
-          className="w-full bg-white border-2 border-slate-100 rounded-2xl py-4 pl-12 pr-4 outline-none focus:border-blue-500 transition-all font-medium text-slate-700" 
+      <div className="relative">
+        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-fm-muted" size={18} />
+        <input
+          type="search"
+          value={q}
+          onChange={e => setQ(e.target.value)}
+          placeholder="Search name or phone…"
+          className="w-full bg-fm-surface border border-fm-border rounded-xl py-3.5 pl-12 pr-4 outline-none focus:border-fm-accent text-sm text-fm-ink shadow-sm"
         />
       </div>
 
-      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {tenants.map(tenant => (
-          <div key={tenant.id} className="bg-white p-8 rounded-[32px] border border-slate-100 shadow-sm hover:shadow-xl transition-all group relative">
-            <button 
+      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {filtered.map(tenant => (
+          <div
+            key={tenant.id}
+            className="bg-fm-surface p-6 rounded-xl border border-fm-border shadow-fm hover:border-fm-accent/25 transition-colors group relative"
+          >
+            <button
+              type="button"
               onClick={() => onDelete(tenant.id)}
-              className="absolute top-6 right-6 p-2 text-slate-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+              className="absolute top-4 right-4 p-2 text-fm-muted hover:text-red-600 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
+              aria-label="Delete tenant"
             >
               <Trash2 size={18} />
             </button>
-            <div className="flex justify-between items-start mb-6">
-              <div className="w-14 h-14 bg-slate-100 rounded-2xl flex items-center justify-center text-slate-400 group-hover:bg-blue-600 group-hover:text-white transition-all">
-                <User size={28} />
+            <div className="flex justify-between items-start mb-4">
+              <div className="w-12 h-12 bg-fm-canvas rounded-xl flex items-center justify-center text-fm-muted group-hover:bg-fm-accentsoft group-hover:text-fm-accent transition-colors">
+                <User size={24} />
               </div>
-              <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
-                tenant.status === Status.ACTIVE ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
-              }`}>
+              <span
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold uppercase tracking-wide ${
+                  tenant.status === Status.ACTIVE ? 'bg-teal-50 text-teal-800' : 'bg-slate-100 text-slate-600'
+                }`}
+              >
                 {tenant.status}
               </span>
             </div>
-            <h3 className="text-xl font-black text-slate-900 mb-1">{tenant.name}</h3>
-            <div className="space-y-3 mt-6">
-              <div className="flex items-center gap-3 text-slate-500">
-                 <Phone size={14} className="text-slate-400" />
-                 <span className="text-sm font-bold">{tenant.phone}</span>
+            <h3 className="text-lg font-bold text-fm-ink">{tenant.name}</h3>
+            <div className="space-y-2 mt-4 text-sm text-fm-muted">
+              <div className="flex items-center gap-2">
+                <Phone size={14} className="shrink-0" />
+                <span className="font-mono font-medium text-fm-ink">{formatPhoneDisplay(tenant.phone)}</span>
               </div>
-              <div className="flex items-center gap-3 text-slate-500">
-                 <MapPin size={14} className="text-slate-400" />
-                 <span className="text-sm font-medium">{sites.find(s => s.id === tenant.site_id)?.name || 'Unknown Site'}</span>
+              <div className="flex items-center gap-2">
+                <MapPin size={14} className="shrink-0" />
+                <span>{sites.find(s => s.id === tenant.site_id)?.name || '—'}</span>
               </div>
             </div>
           </div>
         ))}
 
-        {tenants.length === 0 && (
-          <div className="col-span-full py-20 text-center bg-white rounded-[32px] border-2 border-dashed border-slate-100">
-            <User className="w-12 h-12 text-slate-200 mx-auto mb-4" />
-            <p className="text-slate-400 font-bold">No tenants found. Start by adding one.</p>
+        {filtered.length === 0 && (
+          <div className="col-span-full py-16 text-center bg-fm-surface rounded-xl border border-dashed border-fm-border">
+            <User className="w-10 h-10 text-fm-border mx-auto mb-3" />
+            <p className="text-fm-muted font-medium text-sm">No tenants match your search.</p>
           </div>
         )}
       </div>

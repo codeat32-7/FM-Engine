@@ -1,0 +1,62 @@
+/* FM Engine — operations CMMS theme (navy / copper / cool neutrals) */
+:root {
+  --fm-bg: #f0f2f5;
+  --fm-surface: #ffffff;
+  --fm-ink: #0c1222;
+  --fm-muted: #5c6578;
+  --fm-border: #e2e6ed;
+  --fm-navy: #0f172a;
+  --fm-navy-hover: #1e293b;
+  --fm-accent: #c45c26;
+  --fm-accent-hover: #a34a1c;
+  --fm-accent-soft: rgba(196, 92, 38, 0.12);
+  --fm-success: #0d9488;
+  --fm-warning: #d97706;
+  --fm-danger: #dc2626;
+  --fm-mono: "JetBrains Mono", ui-monospace, monospace;
+  --fm-sans: "DM Sans", system-ui, sans-serif;
+  --fm-radius: 12px;
+  --fm-radius-lg: 20px;
+  --fm-shadow: 0 1px 3px rgba(12, 18, 34, 0.06), 0 8px 24px rgba(12, 18, 34, 0.04);
+}
+
+body {
+  font-family: var(--fm-sans);
+  background: var(--fm-bg);
+  color: var(--fm-ink);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.fm-mono {
+  font-family: var(--fm-mono);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #eef1f5;
+}
+::-webkit-scrollbar-thumb {
+  background: #c5cdd9;
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #9aa5b8;
+}
+
+@keyframes fm-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fm-animate-in {
+  animation: fm-fade-in 0.35s ease-out both;
+}

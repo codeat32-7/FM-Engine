@@ -1,79 +1,101 @@
 
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import { Asset, Site, Block, Status } from '../types';
 import { Plus, Search, Package, MapPin, Layers, Trash2 } from 'lucide-react';
 
 interface AssetListProps {
   assets: Asset[];
   sites: Site[];
-  blocks: Block[];
+  blocks?: Block[];
   onAdd: () => void;
   onDelete: (id: string) => void;
 }
 
-const AssetList: React.FC<AssetListProps> = ({ assets, sites, blocks, onAdd, onDelete }) => {
+const AssetList: React.FC<AssetListProps> = ({ assets, sites, blocks = [], onAdd, onDelete }) => {
+  const [q, setQ] = useState('');
+  const filtered = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    if (!s) return assets;
+    return assets.filter(
+      a => a.name.toLowerCase().includes(s) || (a.code || '').toLowerCase().includes(s) || (a.type || '').toLowerCase().includes(s)
+    );
+  }, [assets, q]);
+
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
-      <div className="flex justify-between items-end">
+    <div className="space-y-6 fm-animate-in">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
         <div>
-          <h2 className="text-3xl font-black text-slate-900">Assets</h2>
-          <p className="text-slate-500 font-medium text-sm">Equipment and facility infrastructure</p>
+          <p className="text-xs font-semibold text-fm-accent uppercase tracking-wider">Register</p>
+          <h2 className="text-2xl font-bold text-fm-ink mt-1">Assets</h2>
+          <p className="text-fm-muted text-sm mt-1">Equipment linked to sites for work order routing.</p>
         </div>
-        <button onClick={onAdd} className="bg-slate-900 text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 shadow-lg shadow-slate-200 active:scale-95 transition-all">
-          <Plus size={20} /> Add Asset
+        <button
+          type="button"
+          onClick={onAdd}
+          className="bg-fm-navy text-white px-5 py-3 rounded-xl font-semibold text-sm flex items-center gap-2 shadow-fm hover:bg-slate-800 shrink-0"
+        >
+          <Plus size={18} /> Add asset
         </button>
       </div>
 
-      <div className="relative mb-8">
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-        <input 
-          type="text" 
-          placeholder="Search assets by name or code..." 
-          className="w-full bg-white border-2 border-slate-100 rounded-2xl py-4 pl-12 pr-4 outline-none focus:border-blue-500 transition-all font-medium text-slate-700" 
+      <div className="relative">
+        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-fm-muted" size={18} />
+        <input
+          type="search"
+          value={q}
+          onChange={e => setQ(e.target.value)}
+          placeholder="Search by name, code, or type…"
+          className="w-full bg-fm-surface border border-fm-border rounded-xl py-3.5 pl-12 pr-4 outline-none focus:border-fm-accent focus:ring-2 focus:ring-fm-accent/15 text-sm text-fm-ink shadow-sm"
         />
       </div>
 
-      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 pb-20">
-        {assets.map(asset => (
-          <div key={asset.id} className="bg-white p-8 rounded-[32px] border border-slate-100 shadow-sm hover:shadow-xl transition-all group relative">
-            <button 
+      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4 pb-20">
+        {filtered.map(asset => (
+          <div
+            key={asset.id}
+            className="bg-fm-surface p-6 rounded-xl border border-fm-border shadow-fm hover:border-fm-accent/25 transition-colors group relative"
+          >
+            <button
+              type="button"
               onClick={() => onDelete(asset.id)}
-              className="absolute top-6 right-6 p-2 text-slate-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+              className="absolute top-4 right-4 p-2 text-fm-muted hover:text-red-600 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
+              aria-label="Delete asset"
             >
               <Trash2 size={18} />
             </button>
-            <div className="flex justify-between items-start mb-6">
-              <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-400 group-hover:bg-blue-600 group-hover:text-white transition-all">
-                <Package size={28} />
+            <div className="flex justify-between items-start mb-4">
+              <div className="w-12 h-12 bg-fm-canvas rounded-xl flex items-center justify-center text-fm-muted group-hover:bg-fm-navy group-hover:text-white transition-colors">
+                <Package size={24} />
               </div>
-              <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
-                asset.status === Status.ACTIVE ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
-              }`}>
+              <span
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold uppercase tracking-wide ${
+                  asset.status === Status.ACTIVE ? 'bg-teal-50 text-teal-800' : 'bg-slate-100 text-slate-600'
+                }`}
+              >
                 {asset.status}
               </span>
             </div>
-            <h3 className="text-xl font-black text-slate-900 mb-1">{asset.name}</h3>
-            <p className="text-[10px] font-bold text-slate-400 tracking-widest uppercase mb-6">{asset.code}</p>
-            
-            <div className="space-y-3 pt-6 border-t border-slate-50">
-              <div className="flex items-center gap-3 text-slate-500">
-                 <MapPin size={14} className="text-slate-400" />
-                 <span className="text-sm font-bold">{sites.find(s => s.id === asset.site_id)?.name || 'Unknown Site'}</span>
+            <h3 className="text-lg font-bold text-fm-ink">{asset.name}</h3>
+            <p className="font-mono text-[11px] text-fm-muted mt-0.5">{asset.code}</p>
+            <div className="space-y-2 mt-4 pt-4 border-t border-fm-border text-sm text-fm-muted">
+              <div className="flex items-center gap-2">
+                <MapPin size={14} className="shrink-0" />
+                <span className="font-medium text-fm-ink">{sites.find(s => s.id === asset.site_id)?.name || '—'}</span>
               </div>
               {asset.block_id && (
-                <div className="flex items-center gap-3 text-slate-500">
-                   <Layers size={14} className="text-slate-400" />
-                   <span className="text-sm font-medium">{blocks.find(b => b.id === asset.block_id)?.name || 'Space'}</span>
+                <div className="flex items-center gap-2">
+                  <Layers size={14} className="shrink-0" />
+                  <span>{blocks.find(b => b.id === asset.block_id)?.name || 'Space'}</span>
                 </div>
               )}
             </div>
           </div>
         ))}
 
-        {assets.length === 0 && (
-          <div className="col-span-full py-20 text-center bg-white rounded-[32px] border-2 border-dashed border-slate-100">
-            <Package className="w-12 h-12 text-slate-200 mx-auto mb-4" />
-            <p className="text-slate-400 font-bold">No assets cataloged yet.</p>
+        {filtered.length === 0 && (
+          <div className="col-span-full py-16 text-center bg-fm-surface rounded-xl border border-dashed border-fm-border">
+            <Package className="w-10 h-10 text-fm-border mx-auto mb-3" />
+            <p className="text-fm-muted font-medium text-sm">No assets match your search.</p>
           </div>
         )}
       </div>

@@ -1,17 +1,23 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-const getSupabaseConfig = () => {
-  // Use window.process for the shim in index.html, or fallback to hardcoded values
-  const env = (window as any).process?.env || {};
+export function getSupabaseConfig(): { url: string; anonKey: string } {
+  const meta = import.meta.env;
+  const win =
+    typeof window !== 'undefined'
+      ? ((window as unknown as { process?: { env?: Record<string, string> } }).process?.env || {})
+      : {};
   return {
-    url: env.SUPABASE_URL || 'https://oygdrtvzoabboxycfdil.supabase.co',
-    anonKey: env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im95Z2RydHZ6b2FiYm94eWNmZGlsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA2NjI0MjEsImV4cCI6MjA4NjIzODQyMX0.KGEDbWnaSC7H4_9WtaA78B4YNwT3GqI9Cab9gU_HqZ8'
+    url: (meta.VITE_SUPABASE_URL || win.SUPABASE_URL || '') as string,
+    anonKey: (meta.VITE_SUPABASE_ANON_KEY || win.SUPABASE_ANON_KEY || '') as string,
   };
-};
+}
 
 const { url, anonKey } = getSupabaseConfig();
-export const supabase = createClient(url, anonKey);
+export const supabase = createClient(
+  url || 'https://local.invalid',
+  anonKey || 'invalid-key'
+);
 
 export interface ConnectionStatus {
   connected: boolean;
@@ -20,43 +26,46 @@ export interface ConnectionStatus {
 }
 
 export const checkSchemaReady = async (): Promise<ConnectionStatus> => {
+  const { url: u, anonKey: k } = getSupabaseConfig();
+  if (!u?.trim() || !k?.trim()) {
+    return {
+      connected: false,
+      error: 'Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to .env (or SUPABASE_URL / SUPABASE_ANON_KEY).',
+    };
+  }
   try {
-    // 1. Check for organizations (Fundamental table)
     const { error: orgErr } = await supabase.from('organizations').select('id').limit(1);
-    
+
     if (orgErr) {
-      // PGRST116 is not an error for existence check, but 42P01 (relation does not exist) is
       if (orgErr.message?.includes('does not exist') || orgErr.code === '42P01') {
         return { connected: false, needsSetup: true, error: "Missing 'organizations' table." };
       }
-      // If it's another error (like connection), return it
       return { connected: false, error: orgErr.message };
     }
 
-    // 2. Check for profiles and its columns
     const { error: profErr } = await supabase.from('profiles').select('id, site_id').limit(1);
     if (profErr) {
       if (profErr.message?.includes('does not exist') || profErr.code === '42P01') {
-        return { connected: false, needsSetup: true, error: "Profiles table not found." };
+        return { connected: false, needsSetup: true, error: 'Profiles table not found.' };
       }
       if (profErr.message?.includes('column "site_id" does not exist') || profErr.code === '42703' || profErr.message?.includes('site_id')) {
         return { connected: false, needsSetup: true, error: "Profiles table is missing 'site_id' column." };
       }
     }
 
-    // 3. Check for service_requests and its columns
     const { error: srErr } = await supabase.from('service_requests').select('id, site_id, asset_id').limit(1);
     if (srErr) {
       if (srErr.message?.includes('does not exist') || srErr.code === '42P01') {
-        return { connected: false, needsSetup: true, error: "Service Requests table not found." };
+        return { connected: false, needsSetup: true, error: 'Service Requests table not found.' };
       }
       if (srErr.message?.includes('column') || srErr.code === '42703') {
-        return { connected: false, needsSetup: true, error: "Service Requests table is missing columns." };
+        return { connected: false, needsSetup: true, error: 'Service Requests table is missing columns.' };
       }
     }
-    
+
     return { connected: true };
-  } catch (e: any) {
-    return { connected: false, error: e.message || 'Unknown error' };
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : 'Unknown error';
+    return { connected: false, error: msg };
   }
 };

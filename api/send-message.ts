@@ -1,3 +1,4 @@
+import { toWhatsAppAddress } from '../lib/phone';
 
 export const config = {
   runtime: 'edge',
@@ -25,8 +26,7 @@ export default async function handler(req: Request) {
       const auth = btoa(`${accountSid}:${authToken}`);
       const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`;
       
-      // Ensure To number has whatsapp: prefix
-      const toPhone = phone.startsWith('whatsapp:') ? phone : `whatsapp:${phone}`;
+      const toPhone = toWhatsAppAddress(phone);
       
       const params = new URLSearchParams();
       params.append('To', toPhone);

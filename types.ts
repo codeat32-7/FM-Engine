@@ -50,11 +50,11 @@ export interface Site {
 
 export interface Block {
   id: string;
-  org_id: string;
+  org_id?: string;
   site_id: string;
   parent_block_id?: string;
   name: string;
-  type: BlockType;
+  type: BlockType | string;
 }
 
 export interface Tenant {

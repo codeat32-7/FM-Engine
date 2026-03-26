@@ -1,15 +1,14 @@
 
 import React from 'react';
-import { 
-  LayoutDashboard, 
-  Wrench, 
-  MapPin, 
-  Package, 
+import {
+  LayoutDashboard,
+  Wrench,
+  MapPin,
+  Package,
   Settings,
   Wifi,
   WifiOff,
   Users,
-  Building,
   UserCheck,
   LogOut
 } from 'lucide-react';
@@ -38,123 +37,119 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange, onLog
   const visibleTabs = tabConfigs.filter(t => t.isVisible);
 
   return (
-    <div className="flex flex-col min-h-screen bg-[#F8FAFC] text-slate-900 md:flex-row">
-      <aside className="hidden md:flex flex-col fixed inset-y-0 left-0 w-64 bg-white border-r border-slate-200 shadow-sm z-30">
-        <div className="p-6">
-          <div className="flex items-center gap-3 mb-1">
-            <div className="w-8 h-8 bg-slate-900 rounded-lg flex items-center justify-center">
+    <div className="flex flex-col min-h-screen bg-fm-canvas text-fm-ink md:flex-row">
+      <aside className="hidden md:flex flex-col fixed inset-y-0 left-0 w-[260px] bg-fm-navy text-slate-200 z-30 border-r border-slate-800/80">
+        <div className="p-6 border-b border-slate-800/80">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-fm-accent flex items-center justify-center shadow-lg shadow-fm-accent/25">
               <span className="text-white font-bold text-lg">F</span>
             </div>
-            <h1 className="text-xl font-bold tracking-tight text-slate-800">FM Engine</h1>
+            <div>
+              <h1 className="text-sm font-bold tracking-tight text-white leading-tight">FM Engine</h1>
+              <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">Work orders</p>
+            </div>
           </div>
-          
-          <div className="mt-4 p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-center gap-3">
-             <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-sm text-slate-400 border border-slate-200">
-               <Building size={20} />
-             </div>
-             <div className="flex-1 min-w-0">
-               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Organization</p>
-               <p className="text-xs font-black text-slate-800 truncate">{orgName || 'Setup Pending'}</p>
-             </div>
+          <div className="mt-5 p-3 rounded-xl bg-slate-800/60 border border-slate-700/50">
+            <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-0.5">Organization</p>
+            <p className="text-sm font-semibold text-white truncate">{orgName || '—'}</p>
           </div>
         </div>
-        
-        <nav className="flex-1 px-4 space-y-1 mt-4">
+
+        <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
           {visibleTabs.map((tab) => {
-            // Fix: Fallback to LayoutDashboard if icon is not found to prevent React Error #130
             const Icon = iconMap[tab.iconName] || LayoutDashboard;
             const isActive = activeTab === tab.id;
             return (
               <button
                 key={tab.id}
+                type="button"
                 onClick={() => onTabChange(tab.id)}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all text-sm font-medium ${
-                  isActive 
-                    ? 'bg-blue-50 text-blue-700 border border-blue-100 shadow-sm' 
-                    : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                  isActive
+                    ? 'bg-fm-accent/15 text-fm-accent border border-fm-accent/25'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/80'
                 }`}
               >
-                <Icon size={18} className={isActive ? 'text-blue-600' : 'text-slate-400'} />
-                <span>{tab.label}</span>
+                <Icon size={18} className={isActive ? 'text-fm-accent' : 'text-slate-500'} />
+                <span className="truncate">{tab.label}</span>
               </button>
             );
           })}
         </nav>
 
-        <div className="p-4 border-t border-slate-100">
-          <div className="flex items-center gap-2 px-4 mb-4">
-            <div className={`w-2 h-2 rounded-full ${
-              dbStatus === 'connected' ? 'bg-emerald-500' : 
-              dbStatus === 'error' ? 'bg-red-500' : 'bg-amber-400 animate-pulse'
-            }`} />
-            <span className={`text-[10px] font-bold uppercase tracking-wider ${
-              dbStatus === 'connected' ? 'text-emerald-600' : 'text-red-600'
-            }`}>
-              {dbStatus === 'connected' ? 'Systems Live' : 'Reconnecting...'}
+        <div className="p-3 border-t border-slate-800/80 space-y-1">
+          <div className="flex items-center gap-2 px-3 py-2">
+            <span
+              className={`w-2 h-2 rounded-full shrink-0 ${
+                dbStatus === 'connected' ? 'bg-fm-success' : dbStatus === 'error' ? 'bg-red-500' : 'bg-fm-warning animate-pulse'
+              }`}
+            />
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+              {dbStatus === 'connected' ? 'Live sync' : dbStatus === 'error' ? 'Disconnected' : 'Connecting'}
             </span>
           </div>
-          <button 
-             onClick={() => onTabChange('settings')}
-             className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${
-               activeTab === 'settings' ? 'bg-slate-100 text-slate-900' : 'text-slate-500 hover:bg-slate-50'
-             }`}
-           >
+          <button
+            type="button"
+            onClick={() => onTabChange('settings')}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+              activeTab === 'settings' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:bg-slate-800/80 hover:text-white'
+            }`}
+          >
             <Settings size={18} />
-            <span>Settings</span>
+            Settings
           </button>
-          <button 
-             onClick={onLogout}
-             className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium text-red-500 hover:bg-red-50 transition-all mt-1"
-           >
+          <button
+            type="button"
+            onClick={onLogout}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-red-400 hover:bg-red-950/40 transition-colors"
+          >
             <LogOut size={18} />
-            <span>Logout</span>
+            Log out
           </button>
         </div>
       </aside>
 
-      <div className="flex-1 md:pl-64 flex flex-col min-h-screen">
-        <header className="md:hidden flex items-center justify-between p-4 bg-white border-b border-slate-200 sticky top-0 z-20">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 bg-slate-900 rounded flex items-center justify-center">
+      <div className="flex-1 md:pl-[260px] flex flex-col min-h-screen">
+        <header className="md:hidden flex items-center justify-between px-4 py-3 bg-fm-surface border-b border-fm-border sticky top-0 z-20 shadow-sm">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-9 h-9 rounded-lg bg-fm-accent flex items-center justify-center shrink-0">
               <span className="text-white font-bold text-sm">F</span>
             </div>
-            <div className="flex flex-col">
-              <h1 className="text-sm font-black text-slate-800 leading-none">FM Engine</h1>
-              <p className="text-[10px] font-bold text-slate-400 uppercase truncate max-w-[120px]">{orgName}</p>
+            <div className="min-w-0">
+              <h1 className="text-sm font-bold text-fm-ink leading-none truncate">FM Engine</h1>
+              <p className="text-[10px] font-medium text-fm-muted truncate">{orgName}</p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-             <div className={`p-1.5 rounded-full ${dbStatus === 'connected' ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
-                {dbStatus === 'connected' ? <Wifi size={16} /> : <WifiOff size={16} />}
-             </div>
-             <button 
-               onClick={onLogout}
-               className="p-1.5 text-slate-400 hover:text-red-500 transition-colors"
-             >
-               <LogOut size={18} />
-             </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <div
+              className={`p-2 rounded-lg ${dbStatus === 'connected' ? 'bg-emerald-50 text-fm-success' : 'bg-red-50 text-red-600'}`}
+            >
+              {dbStatus === 'connected' ? <Wifi size={18} /> : <WifiOff size={18} />}
+            </div>
+            <button type="button" onClick={onLogout} className="p-2 text-fm-muted hover:text-red-600 rounded-lg" aria-label="Log out">
+              <LogOut size={18} />
+            </button>
           </div>
         </header>
 
-        <main className="flex-1 p-4 md:p-8 max-w-7xl mx-auto w-full pb-24 md:pb-10">
-          {children}
-        </main>
+        <main className="flex-1 p-4 md:p-8 max-w-7xl mx-auto w-full pb-28 md:pb-10">{children}</main>
       </div>
 
-      <nav className="md:hidden fixed bottom-0 inset-x-0 bg-white border-t border-slate-200 flex justify-around p-2 pb-safe z-40 shadow-2xl shadow-black">
+      <nav className="md:hidden fixed bottom-0 inset-x-0 bg-fm-surface border-t border-fm-border flex justify-around px-1 pt-1 pb-[max(0.5rem,env(safe-area-inset-bottom))] z-40 shadow-[0_-4px_24px_rgba(12,18,34,0.08)]">
         {visibleTabs.map((tab) => {
           const Icon = iconMap[tab.iconName] || LayoutDashboard;
           const isActive = activeTab === tab.id;
           return (
             <button
               key={tab.id}
+              type="button"
               onClick={() => onTabChange(tab.id)}
-              className={`flex flex-col items-center gap-1 p-2 transition-all flex-1 ${
-                isActive ? 'text-blue-600' : 'text-slate-400'
+              className={`flex flex-col items-center gap-0.5 py-2 px-1 flex-1 min-w-0 rounded-lg transition-colors ${
+                isActive ? 'text-fm-accent' : 'text-fm-muted'
               }`}
             >
               <Icon size={20} />
-              <span className="text-[9px] font-bold uppercase tracking-wider">{tab.label.split(' ')[0]}</span>
+              <span className="text-[9px] font-semibold uppercase tracking-wide truncate w-full text-center">{tab.label.split(' ')[0]}</span>
             </button>
           );
         })}
