@@ -32,7 +32,7 @@ const AssetList: React.FC<AssetListProps> = ({ assets, sites, blocks = [], onAdd
         <button
           type="button"
           onClick={onAdd}
-          className="bg-fm-navy text-white px-5 py-3 rounded-xl font-semibold text-sm flex items-center gap-2 shadow-fm hover:bg-slate-800 shrink-0"
+          className="bg-blue-600 text-white px-5 py-3 rounded-xl font-semibold text-sm flex items-center gap-2 shadow-fm hover:bg-blue-700 shrink-0"
         >
           <Plus size={18} /> Add asset
         </button>
@@ -64,7 +64,7 @@ const AssetList: React.FC<AssetListProps> = ({ assets, sites, blocks = [], onAdd
               <Trash2 size={18} />
             </button>
             <div className="flex justify-between items-start mb-4">
-              <div className="w-12 h-12 bg-fm-canvas rounded-xl flex items-center justify-center text-fm-muted group-hover:bg-fm-navy group-hover:text-white transition-colors">
+              <div className="w-12 h-12 bg-fm-canvas rounded-xl flex items-center justify-center text-fm-muted group-hover:bg-blue-50 group-hover:text-blue-700 transition-colors">
                 <Package size={24} />
               </div>
               <span

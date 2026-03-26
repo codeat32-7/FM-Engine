@@ -202,7 +202,7 @@ const SRDetail: React.FC<SRDetailProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-fm-navy/50 backdrop-blur-sm z-50 flex items-center justify-center p-0 md:p-5">
+    <div className="fixed inset-0 bg-slate-900/20 backdrop-blur-sm z-50 flex items-center justify-center p-0 md:p-5">
       <div className="bg-fm-surface w-full max-w-5xl h-full md:h-[min(90vh,880px)] md:rounded-2xl shadow-fm border border-fm-border overflow-hidden flex flex-col md:flex-row">
         <div className="flex-1 overflow-y-auto p-6 md:p-8 border-b md:border-b-0 md:border-r border-fm-border">
           <div className="flex justify-between items-start gap-4 mb-6">
@@ -259,7 +259,7 @@ const SRDetail: React.FC<SRDetailProps> = ({
                 <button
                   type="button"
                   onClick={() => handleStatusChange(SRStatus.IN_PROGRESS)}
-                  className="inline-flex items-center gap-2 bg-fm-navy text-white px-4 py-2.5 rounded-xl font-semibold text-sm hover:bg-slate-800"
+                  className="inline-flex items-center gap-2 bg-blue-600 text-white px-4 py-2.5 rounded-xl font-semibold text-sm hover:bg-blue-700 transition-colors"
                 >
                   <Play size={16} /> Start work
                 </button>
@@ -282,7 +282,7 @@ const SRDetail: React.FC<SRDetailProps> = ({
                 <button
                   type="button"
                   onClick={() => handleStatusChange(SRStatus.CLOSED)}
-                  className="inline-flex items-center gap-2 bg-fm-navy text-white px-4 py-2.5 rounded-xl font-semibold text-sm hover:bg-slate-800"
+                  className="inline-flex items-center gap-2 bg-blue-600 text-white px-4 py-2.5 rounded-xl font-semibold text-sm hover:bg-blue-700 transition-colors"
                 >
                   <CheckCircle size={16} /> Close
                 </button>
@@ -322,7 +322,7 @@ const SRDetail: React.FC<SRDetailProps> = ({
                     <div
                       className={`max-w-[92%] p-3 rounded-xl text-sm font-medium ${
                         msg.sender_role === 'admin'
-                          ? 'bg-fm-navy text-white rounded-tr-sm'
+                          ? 'bg-blue-600 text-white rounded-tr-sm'
                           : 'bg-fm-surface text-fm-ink border border-fm-border rounded-tl-sm shadow-sm'
                       }`}
                     >
@@ -354,7 +354,7 @@ const SRDetail: React.FC<SRDetailProps> = ({
                 type="button"
                 onClick={sendMessage}
                 disabled={!newMessage.trim() || !sr.requester_phone || isSending}
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 p-2 bg-fm-navy text-white rounded-lg hover:bg-slate-800 disabled:opacity-40"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-40 transition-colors"
                 aria-label="Send"
               >
                 <Send size={16} />
@@ -365,7 +365,7 @@ const SRDetail: React.FC<SRDetailProps> = ({
       </div>
 
       {showTagModal && (
-        <div className="fixed inset-0 bg-fm-navy/40 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-slate-900/20 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
           <div className="bg-fm-surface w-full max-w-md rounded-2xl p-6 shadow-fm border border-fm-border">
             <div className="flex justify-between items-center mb-5">
               <h3 className="text-lg font-bold text-fm-ink">Link requester</h3>
@@ -418,7 +418,7 @@ const SRDetail: React.FC<SRDetailProps> = ({
                     const phone = (document.getElementById('tag-new-phone') as HTMLInputElement).value;
                     if (name && phone) handleTagPerson(phone, name, 'requester');
                   }}
-                  className="w-full bg-fm-navy text-white py-3 rounded-xl font-semibold text-sm hover:bg-slate-800"
+                  className="w-full bg-blue-600 text-white py-3 rounded-xl font-semibold text-sm hover:bg-blue-700 transition-colors"
                 >
                   Save &amp; link
                 </button>

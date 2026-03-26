@@ -77,7 +77,7 @@ const Dashboard: React.FC<DashboardProps> = ({ srs, onNewRequest, assets, organi
       </div>
 
       {/* Single merged card: WhatsApp message + QR */}
-      <div className="bg-[#0A0A0A] rounded-[40px] p-6 md:p-10 text-white relative overflow-hidden shadow-2xl border border-white/5">
+      <div className="bg-white rounded-[40px] p-6 md:p-10 text-slate-900 relative overflow-hidden shadow-2xl border border-slate-100">
         <div className="absolute top-0 right-0 w-[420px] h-[420px] bg-blue-500/10 blur-[110px] rounded-full -mr-28 -mt-28 opacity-90" />
 
         <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-8 md:gap-12">
@@ -88,29 +88,29 @@ const Dashboard: React.FC<DashboardProps> = ({ srs, onNewRequest, assets, organi
               </div>
               <div>
                 <div className="inline-flex items-center gap-2 px-3 py-1 bg-blue-500/10 border border-blue-500/20 rounded-full mb-2">
-                  <ShieldCheck size={12} className="text-blue-300" />
-                  <span className="text-[8px] font-black uppercase tracking-[0.2em] text-blue-200 leading-none">
+                  <ShieldCheck size={12} className="text-blue-600" />
+                  <span className="text-[8px] font-black uppercase tracking-[0.2em] text-blue-700 leading-none">
                     FM Engine Official
                   </span>
                 </div>
                 <h3 className="text-2xl md:text-4xl font-black tracking-tight leading-tight">
                   WhatsApp Support
                   <br />
-                  <span className="text-blue-300">Work Orders</span>
+                  <span className="text-blue-700">Work Orders</span>
                 </h3>
               </div>
             </div>
 
-            <p className="text-slate-400 text-sm md:text-base font-medium leading-relaxed max-w-sm mx-auto md:mx-0">
+            <p className="text-slate-600 text-sm md:text-base font-medium leading-relaxed max-w-sm mx-auto md:mx-0">
               Scan to message the WhatsApp line. Twilio sandbox will prefill with:
-              <span className="font-mono text-blue-200 font-semibold"> {sandboxJoin}</span>
+              <span className="font-mono text-blue-700 font-semibold"> {sandboxJoin}</span>
             </p>
 
             <div className="flex flex-wrap gap-3 pt-1 justify-center md:justify-start">
               <button
                 type="button"
                 onClick={handleShare}
-                className="bg-blue-500 text-black px-6 py-3 rounded-[16px] font-black flex items-center gap-2 hover:bg-blue-400 transition-all active:scale-95 shadow-lg shadow-blue-500/20 group text-sm"
+                className="bg-blue-600 text-white px-6 py-3 rounded-[16px] font-black flex items-center gap-2 hover:bg-blue-700 transition-all active:scale-95 shadow-lg shadow-blue-500/20 group text-sm"
               >
                 <Share2 size={18} className="group-hover:rotate-12 transition-transform" />
                 <span>Share intake link</span>

@@ -38,20 +38,20 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange, onLog
 
   return (
     <div className="flex flex-col min-h-screen bg-fm-canvas text-fm-ink md:flex-row">
-      <aside className="hidden md:flex flex-col fixed inset-y-0 left-0 w-[260px] bg-fm-navy text-slate-200 z-30 border-r border-slate-800/80">
-        <div className="p-6 border-b border-slate-800/80">
+      <aside className="hidden md:flex flex-col fixed inset-y-0 left-0 w-[260px] bg-white text-slate-900 z-30 border-r border-slate-200">
+        <div className="p-6 border-b border-slate-200">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-fm-accent flex items-center justify-center shadow-lg shadow-fm-accent/25">
               <span className="text-white font-bold text-lg">F</span>
             </div>
             <div>
-              <h1 className="text-sm font-bold tracking-tight text-white leading-tight">FM Engine</h1>
+              <h1 className="text-sm font-bold tracking-tight text-slate-900 leading-tight">FM Engine</h1>
               <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">Work orders</p>
             </div>
           </div>
-          <div className="mt-5 p-3 rounded-xl bg-slate-800/60 border border-slate-700/50">
-            <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-0.5">Organization</p>
-            <p className="text-sm font-semibold text-white truncate">{orgName || '—'}</p>
+          <div className="mt-5 p-3 rounded-xl bg-blue-50 border border-blue-100">
+            <p className="text-[10px] font-semibold text-blue-700 uppercase tracking-wider mb-0.5">Organization</p>
+            <p className="text-sm font-semibold text-slate-900 truncate">{orgName || '—'}</p>
           </div>
         </div>
 
@@ -66,8 +66,8 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange, onLog
                 onClick={() => onTabChange(tab.id)}
                 className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
                   isActive
-                    ? 'bg-fm-accent/15 text-fm-accent border border-fm-accent/25'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-800/80'
+                    ? 'bg-blue-50 text-blue-700 border border-blue-100 shadow-sm'
+                    : 'text-slate-600 hover:bg-blue-50 hover:text-blue-700'
                 }`}
               >
                 <Icon size={18} className={isActive ? 'text-fm-accent' : 'text-slate-500'} />
@@ -77,7 +77,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange, onLog
           })}
         </nav>
 
-        <div className="p-3 border-t border-slate-800/80 space-y-1">
+        <div className="p-3 border-t border-slate-200 space-y-1">
           <div className="flex items-center gap-2 px-3 py-2">
             <span
               className={`w-2 h-2 rounded-full shrink-0 ${
@@ -92,7 +92,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange, onLog
             type="button"
             onClick={() => onTabChange('settings')}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-              activeTab === 'settings' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:bg-slate-800/80 hover:text-white'
+              activeTab === 'settings' ? 'bg-blue-50 text-blue-700 border border-blue-100' : 'text-slate-600 hover:bg-blue-50 hover:text-blue-700'
             }`}
           >
             <Settings size={18} />
@@ -101,7 +101,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange, onLog
           <button
             type="button"
             onClick={onLogout}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-red-400 hover:bg-red-950/40 transition-colors"
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50 transition-colors"
           >
             <LogOut size={18} />
             Log out

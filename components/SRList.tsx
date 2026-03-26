@@ -65,7 +65,7 @@ const SRList: React.FC<SRListProps> = ({ srs, sites, assets, tenants, requesters
         <button
           type="button"
           onClick={onNewRequest}
-          className="inline-flex items-center justify-center gap-2 bg-fm-navy text-white px-5 py-3 rounded-xl font-semibold text-sm shadow-fm hover:bg-slate-800 transition-colors shrink-0"
+          className="inline-flex items-center justify-center gap-2 bg-blue-600 text-white px-5 py-3 rounded-xl font-semibold text-sm shadow-fm hover:bg-blue-700 transition-colors shrink-0"
         >
           <Plus size={18} />
           New request

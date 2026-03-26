@@ -80,7 +80,7 @@ const Onboarding: React.FC<{ user: UserProfile, onComplete: (user: UserProfile) 
   };
 
   return (
-    <div className="min-h-screen bg-fm-navy flex items-center justify-center p-6">
+    <div className="min-h-screen bg-fm-canvas flex items-center justify-center p-6">
       <div className="max-w-md w-full bg-fm-surface rounded-2xl p-10 shadow-fm border border-fm-border space-y-8 fm-animate-in relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-fm-accent/5 to-transparent pointer-events-none" />
         <div className="flex justify-between items-center relative z-10">
@@ -99,7 +99,7 @@ const Onboarding: React.FC<{ user: UserProfile, onComplete: (user: UserProfile) 
               <p className="text-sm text-fm-muted mt-1">Shown on work orders and resident communications.</p>
             </div>
             <input autoFocus className="w-full bg-fm-canvas border border-fm-border focus:border-fm-accent focus:ring-2 focus:ring-fm-accent/20 rounded-xl p-4 outline-none font-medium text-fm-ink" placeholder="Full name" value={adminName} onChange={e => setAdminName(e.target.value)} />
-            <button disabled={!adminName} onClick={() => setStep(2)} className="w-full bg-fm-navy text-white py-4 rounded-xl font-semibold flex items-center justify-center gap-2 transition-all hover:bg-slate-800 disabled:opacity-40">Continue <ArrowRight size={18} /></button>
+            <button disabled={!adminName} onClick={() => setStep(2)} className="w-full bg-blue-600 text-white py-4 rounded-xl font-semibold flex items-center justify-center gap-2 transition-all hover:bg-blue-700 disabled:opacity-40">Continue <ArrowRight size={18} /></button>
           </div>
         )}
         {step === 2 && (
@@ -110,7 +110,7 @@ const Onboarding: React.FC<{ user: UserProfile, onComplete: (user: UserProfile) 
               <p className="text-sm text-fm-muted mt-1">One org can hold many sites and assets.</p>
             </div>
             <input autoFocus className="w-full bg-fm-canvas border border-fm-border focus:border-fm-accent focus:ring-2 focus:ring-fm-accent/20 rounded-xl p-4 outline-none font-medium text-fm-ink" placeholder="e.g. Acme Facilities Ltd" value={orgName} onChange={e => setOrgName(e.target.value)} />
-            <button disabled={!orgName} onClick={() => setStep(3)} className="w-full bg-fm-navy text-white py-4 rounded-xl font-semibold flex items-center justify-center gap-2 hover:bg-slate-800 disabled:opacity-40">Continue <ArrowRight size={18} /></button>
+            <button disabled={!orgName} onClick={() => setStep(3)} className="w-full bg-blue-600 text-white py-4 rounded-xl font-semibold flex items-center justify-center gap-2 hover:bg-blue-700 disabled:opacity-40">Continue <ArrowRight size={18} /></button>
           </div>
         )}
         {step === 3 && (
@@ -341,7 +341,7 @@ const App: React.FC = () => {
 
   if (dbStatus === 'connecting') {
     return (
-      <div className="min-h-screen bg-fm-navy flex flex-col items-center justify-center gap-4">
+      <div className="min-h-screen bg-fm-canvas flex flex-col items-center justify-center gap-4">
         <Loader2 className="animate-spin text-fm-accent" size={40} />
         <p className="text-sm text-slate-400 font-medium">Connecting to operations database…</p>
       </div>
@@ -467,7 +467,7 @@ ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS site_id UUID REFERENCES si
 ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS asset_id UUID REFERENCES assets(id) ON DELETE SET NULL;`;
 
     return (
-      <div className="min-h-screen bg-fm-navy flex items-center justify-center p-6 text-white">
+      <div className="min-h-screen bg-fm-canvas flex items-center justify-center p-6 text-white">
         <div className="max-w-3xl w-full bg-slate-800/90 backdrop-blur rounded-2xl p-10 border border-slate-600/50 shadow-fm space-y-8 fm-animate-in">
           <div className="flex items-start gap-5">
             <div className="p-3 rounded-xl bg-fm-accent/20 text-fm-accent shrink-0">
@@ -563,7 +563,7 @@ ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS asset_id UUID REFERENCES a
                     <p className="text-[10px] font-semibold text-fm-muted uppercase tracking-wider">Unverified contact</p>
                   </div>
                 </div>
-                <button type="button" onClick={() => setShowApproveModal(req)} className="w-full bg-fm-navy text-white py-3.5 rounded-xl font-semibold flex items-center justify-center gap-2 hover:bg-slate-800 transition-colors">
+                <button type="button" onClick={() => setShowApproveModal(req)} className="w-full bg-blue-600 text-white py-3.5 rounded-xl font-semibold flex items-center justify-center gap-2 hover:bg-blue-700 transition-colors">
                   <UserCheck size={18} /> Verify &amp; activate
                 </button>
               </div>
@@ -589,7 +589,7 @@ ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS asset_id UUID REFERENCES a
               <h2 className="text-2xl font-bold text-fm-ink mt-1">Sites &amp; facilities</h2>
               <p className="text-fm-muted text-sm mt-1">Each site has a registration code for WhatsApp sandbox onboarding.</p>
             </div>
-            <button type="button" onClick={() => setShowAddSite(true)} className="bg-fm-navy text-white px-5 py-3 rounded-xl font-semibold flex items-center justify-center gap-2 shadow-fm hover:bg-slate-800 transition-colors shrink-0"><Plus size={20} /> Add site</button>
+            <button type="button" onClick={() => setShowAddSite(true)} className="bg-blue-600 text-white px-5 py-3 rounded-xl font-semibold flex items-center justify-center gap-2 shadow-fm hover:bg-blue-700 transition-colors shrink-0"><Plus size={20} /> Add site</button>
           </div>
           <div className="grid md:grid-cols-2 gap-5">
             {sites.map(site => (
@@ -606,7 +606,7 @@ ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS asset_id UUID REFERENCES a
                   <div className="p-4 bg-fm-canvas text-fm-accent rounded-xl border border-fm-border"><MapPin size={28} /></div>
                   <div className="text-right min-w-0">
                     <span className="text-[10px] font-semibold text-fm-muted uppercase tracking-wider block mb-1">WhatsApp join code</span>
-                    <div className="inline-flex items-center gap-2 px-3 py-2 bg-fm-navy text-white rounded-lg font-mono text-sm font-semibold">
+                    <div className="inline-flex items-center gap-2 px-3 py-2 bg-blue-50 text-blue-700 rounded-lg font-mono text-sm font-semibold border border-blue-100">
                       <Hash size={14} className="text-fm-accent shrink-0" />
                       <span className="truncate">{site.code}</span>
                     </div>
@@ -625,7 +625,7 @@ ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS asset_id UUID REFERENCES a
       )}
 
       {showAddSR && (
-        <div className="fixed inset-0 z-[1000] bg-fm-navy/55 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[1000] bg-slate-900/20 backdrop-blur-sm flex items-center justify-center p-4">
           <form onSubmit={async (e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); await handleAddItem('service_requests', { id: generateServiceRequestId(), title: fd.get('title'), description: fd.get('description'), site_id: fd.get('site_id') || null, status: SRStatus.NEW, source: SRSource.WEB, created_at: new Date().toISOString() }, setSrs, () => setShowAddSR(false)); }} className="bg-fm-surface w-full max-w-lg rounded-2xl p-8 shadow-fm border border-fm-border space-y-6 fm-animate-in">
             <div className="flex justify-between items-start gap-4">
               <div>
@@ -648,7 +648,7 @@ ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS asset_id UUID REFERENCES a
       )}
 
       {showAddSite && (
-        <div className="fixed inset-0 z-[1000] bg-fm-navy/55 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[1000] bg-slate-900/20 backdrop-blur-sm flex items-center justify-center p-4">
           <form onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); handleAddItem('sites', { name: fd.get('name'), location: fd.get('location'), code: `SITE-${Math.floor(1000 + Math.random() * 9000)}`, status: Status.ACTIVE }, setSites, () => setShowAddSite(false)); }} className="bg-fm-surface w-full max-w-md rounded-2xl p-8 shadow-fm border border-fm-border space-y-6 fm-animate-in">
             <div className="flex justify-between items-start">
               <div>
@@ -661,13 +661,13 @@ ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS asset_id UUID REFERENCES a
               <input required name="name" className="w-full bg-fm-canvas border border-fm-border rounded-xl p-4 outline-none font-medium focus:border-fm-accent text-fm-ink" placeholder="Site name" />
               <input required name="location" className="w-full bg-fm-canvas border border-fm-border rounded-xl p-4 outline-none font-medium focus:border-fm-accent text-fm-ink" placeholder="Address / region" />
             </div>
-            <button type="submit" disabled={isLoading} className="w-full bg-fm-navy text-white py-4 rounded-xl font-semibold hover:bg-slate-800 disabled:opacity-50">Save site</button>
+            <button type="submit" disabled={isLoading} className="w-full bg-blue-600 text-white py-4 rounded-xl font-semibold hover:bg-blue-700 disabled:opacity-50 transition-colors">Save site</button>
           </form>
         </div>
       )}
 
       {showApproveModal && (
-        <div className="fixed inset-0 z-[1000] bg-fm-navy/55 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[1000] bg-slate-900/20 backdrop-blur-sm flex items-center justify-center p-4">
           <form onSubmit={async (e) => { e.preventDefault(); await handleApproveTenant(showApproveModal, new FormData(e.currentTarget)); }} className="bg-fm-surface w-full max-w-lg rounded-2xl p-8 shadow-fm border border-fm-border space-y-6 fm-animate-in">
             <div className="flex justify-between items-start">
               <div>

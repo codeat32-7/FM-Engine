@@ -104,7 +104,7 @@ const Auth: React.FC<AuthProps> = ({ onSignIn }) => {
                 <div className="flex items-center gap-3 min-w-0">
                   <div
                     className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${
-                      prof.role === 'admin' ? 'bg-fm-navy text-white' : 'bg-fm-accentsoft text-fm-accent'
+                      prof.role === 'admin' ? 'bg-blue-50 text-blue-700' : 'bg-fm-accentsoft text-fm-accent'
                     }`}
                   >
                     {prof.role === 'admin' ? <ShieldCheck size={22} /> : <UserCircle size={22} />}
@@ -131,7 +131,7 @@ const Auth: React.FC<AuthProps> = ({ onSignIn }) => {
   }
 
   return (
-    <div className="min-h-screen bg-fm-navy flex flex-col items-center justify-center p-6">
+    <div className="min-h-screen bg-fm-canvas flex flex-col items-center justify-center p-6">
       <div className="w-full max-w-md bg-fm-surface rounded-2xl p-8 md:p-10 shadow-fm border border-fm-border fm-animate-in relative overflow-hidden">
         <div className="absolute top-0 right-0 w-40 h-40 bg-fm-accent/10 rounded-full blur-2xl -translate-y-1/2 translate-x-1/2" />
         <div className="relative z-10 flex flex-col items-center text-center mb-8">
@@ -166,7 +166,7 @@ const Auth: React.FC<AuthProps> = ({ onSignIn }) => {
           <button
             disabled={loading || !phone}
             type="submit"
-            className="w-full bg-fm-navy text-white py-4 rounded-xl font-semibold flex items-center justify-center gap-2 hover:bg-slate-800 transition-colors disabled:opacity-40"
+            className="w-full bg-blue-600 text-white py-4 rounded-xl font-semibold flex items-center justify-center gap-2 hover:bg-blue-700 transition-colors disabled:opacity-40"
           >
             {loading ? <Loader2 className="animate-spin" size={22} /> : <>Continue <ArrowRight size={20} /></>}
           </button>

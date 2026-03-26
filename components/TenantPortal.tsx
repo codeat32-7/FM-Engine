@@ -78,6 +78,58 @@ const TenantPortal: React.FC<TenantPortalProps> = ({ user, onLogout }) => {
     fetchTenantData();
   }, [user.phone, suffix]);
 
+  // Realtime: keep SR list updated while the portal is open.
+  // This handles service_requests created by the webhook (Twilio) in real time.
+  useEffect(() => {
+    if (!tenant?.org_id) return;
+
+    const orgId = tenant.org_id;
+    const channel = supabase
+      .channel(`tenant-portal-srs-${orgId}-${digitsOnly(user.phone)}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'service_requests',
+          filter: `org_id=eq.${orgId}`
+        },
+        payload => {
+          const sr = payload.new as ServiceRequest;
+          if (!phonesMatch(sr.requester_phone, user.phone)) return;
+
+          setMySRs(prev => {
+            if (prev.some(p => p.id === sr.id)) return prev;
+            const next = [sr, ...prev];
+            return next.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+          });
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'service_requests',
+          filter: `org_id=eq.${orgId}`
+        },
+        payload => {
+          const sr = payload.new as ServiceRequest;
+          if (!phonesMatch(sr.requester_phone, user.phone)) return;
+
+          setMySRs(prev => {
+            const next = prev.map(p => (p.id === sr.id ? sr : p));
+            return next.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [tenant?.org_id, user.phone]);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-fm-canvas flex flex-col items-center justify-center gap-3">
@@ -115,7 +167,7 @@ const TenantPortal: React.FC<TenantPortalProps> = ({ user, onLogout }) => {
           <button
             type="button"
             onClick={onLogout}
-            className="mt-6 w-full py-3 rounded-xl bg-fm-navy text-white font-semibold text-sm hover:bg-slate-800"
+            className="mt-6 w-full py-3 rounded-xl bg-blue-600 text-white font-semibold text-sm hover:bg-blue-700 transition-colors"
           >
             Sign out
           </button>
@@ -142,13 +194,13 @@ const TenantPortal: React.FC<TenantPortalProps> = ({ user, onLogout }) => {
       </header>
 
       <main className="max-w-3xl mx-auto p-5 space-y-8">
-        <div className="bg-fm-navy rounded-2xl p-6 md:p-8 text-white relative overflow-hidden border border-slate-800 shadow-fm">
+        <div className="bg-white rounded-2xl p-6 md:p-8 text-slate-900 relative overflow-hidden border border-slate-200 shadow-fm">
           <div className="absolute top-0 right-0 w-56 h-56 bg-fm-accent/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3 pointer-events-none" />
           <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
             <div className="space-y-3">
-              <div className="inline-flex items-center gap-2 px-2.5 py-1 bg-white/10 rounded-lg border border-white/10">
+              <div className="inline-flex items-center gap-2 px-2.5 py-1 bg-blue-50 rounded-lg border border-blue-100">
                 <CheckCircle size={12} className="text-fm-success" />
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-300">Verified resident</span>
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-blue-700">Verified resident</span>
               </div>
               <h2 className="text-2xl font-bold tracking-tight">{site?.name || 'Your site'}</h2>
               <div className="flex flex-wrap gap-4 text-sm text-slate-400">
@@ -165,7 +217,7 @@ const TenantPortal: React.FC<TenantPortalProps> = ({ user, onLogout }) => {
             <button
               type="button"
               onClick={() => setShowAddSR(true)}
-              className="bg-white text-fm-navy px-6 py-3.5 rounded-xl font-semibold text-sm shadow-lg hover:bg-slate-100 transition-colors shrink-0 inline-flex items-center justify-center gap-2"
+              className="bg-blue-600 text-white px-6 py-3.5 rounded-xl font-semibold text-sm shadow-lg hover:bg-blue-700 transition-colors shrink-0 inline-flex items-center justify-center gap-2"
             >
               <Plus size={18} /> Report issue
             </button>
@@ -218,7 +270,7 @@ const TenantPortal: React.FC<TenantPortalProps> = ({ user, onLogout }) => {
       </main>
 
       {showAddSR && (
-        <div className="fixed inset-0 z-[100] bg-fm-navy/50 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100] bg-slate-900/20 backdrop-blur-sm flex items-center justify-center p-4">
           <form
             onSubmit={async e => {
               e.preventDefault();

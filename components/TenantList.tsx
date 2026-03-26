@@ -35,7 +35,7 @@ const TenantList: React.FC<TenantListProps> = ({ tenants, sites, onAdd, onDelete
         <button
           type="button"
           onClick={onAdd}
-          className="bg-fm-navy text-white px-5 py-3 rounded-xl font-semibold text-sm flex items-center gap-2 shadow-fm hover:bg-slate-800 shrink-0"
+          className="bg-blue-600 text-white px-5 py-3 rounded-xl font-semibold text-sm flex items-center gap-2 shadow-fm hover:bg-blue-700 shrink-0"
         >
           <Plus size={18} /> Add tenant
         </button>

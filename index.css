@@ -7,14 +7,14 @@
   --fm-border: #e2e6ed;
   --fm-navy: #0f172a;
   --fm-navy-hover: #1e293b;
-  --fm-accent: #c45c26;
-  --fm-accent-hover: #a34a1c;
-  --fm-accent-soft: rgba(196, 92, 38, 0.12);
+  --fm-accent: #2563eb;
+  --fm-accent-hover: #1d4ed8;
+  --fm-accent-soft: rgba(37, 99, 235, 0.12);
   --fm-success: #0d9488;
   --fm-warning: #d97706;
   --fm-danger: #dc2626;
   --fm-mono: "JetBrains Mono", ui-monospace, monospace;
-  --fm-sans: "DM Sans", system-ui, sans-serif;
+  --fm-sans: "Inter", system-ui, sans-serif;
   --fm-radius: 12px;
   --fm-radius-lg: 20px;
   --fm-shadow: 0 1px 3px rgba(12, 18, 34, 0.06), 0 8px 24px rgba(12, 18, 34, 0.04);

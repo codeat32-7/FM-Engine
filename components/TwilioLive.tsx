@@ -45,16 +45,16 @@ const TwilioLive: React.FC = () => {
               {copied ? <Check size={16} className="text-fm-success" /> : <Copy size={16} />}
             </button>
           </div>
-          <div className="mt-4 bg-fm-navy text-slate-200 p-5 rounded-xl space-y-3 text-sm">
+          <div className="mt-4 bg-blue-50 text-slate-800 p-5 rounded-xl space-y-3 text-sm border border-blue-100">
             <div className="flex items-center gap-2 text-fm-accent font-semibold text-xs uppercase tracking-wide">
               <Info size={14} /> Twilio console
             </div>
-            <ol className="text-xs text-slate-400 space-y-2 list-decimal pl-4 leading-relaxed">
+            <ol className="text-xs text-slate-600 space-y-2 list-decimal pl-4 leading-relaxed">
               <li>
-                <strong className="text-slate-200">Messaging</strong> → <strong className="text-slate-200">Try it out</strong> → <strong className="text-slate-200">Send a WhatsApp message</strong>
+                <strong className="text-slate-900">Messaging</strong> → <strong className="text-slate-900">Try it out</strong> → <strong className="text-slate-900">Send a WhatsApp message</strong>
               </li>
-              <li>Open the <strong className="text-slate-200">Sandbox Settings</strong> tab.</li>
-              <li>Paste the URL into <strong className="text-slate-200">When a message comes in</strong>, method <strong className="text-slate-200">POST</strong>, then Save.</li>
+              <li>Open the <strong className="text-slate-900">Sandbox Settings</strong> tab.</li>
+              <li>Paste the URL into <strong className="text-slate-900">When a message comes in</strong>, method <strong className="text-slate-900">POST</strong>, then Save.</li>
             </ol>
           </div>
         </div>
@@ -80,7 +80,7 @@ const TwilioLive: React.FC = () => {
             href="https://console.twilio.com"
             target="_blank"
             rel="noopener noreferrer"
-            className="flex-1 py-3 px-4 bg-fm-navy text-white rounded-xl text-center text-sm font-semibold flex items-center justify-center gap-2 hover:bg-slate-800 transition-colors"
+            className="flex-1 py-3 px-4 bg-blue-600 text-white rounded-xl text-center text-sm font-semibold flex items-center justify-center gap-2 hover:bg-blue-700 transition-colors"
           >
             Twilio Console <ExternalLink size={14} />
           </a>
